@@ -1,0 +1,21 @@
+; tests/emit/runs.hbnf for the Rust backend: the choices are tried in order, and `rollback { DEPTH }` puts the place back for an
+; alternative that is given up, so only the one that succeeds leaves its pushes.  (The place is read and stored inside `unsafe`, being
+; a `static mut`.)
+language Rust
+prefix none
+whitespace none
+{
+pub static mut STACK: [i32; 64] = [0; 64];
+pub static mut DEPTH: usize = 0;
+fn push(v: i32) {
+    unsafe {
+        STACK[DEPTH] = v;
+        DEPTH += 1;
+    }
+}
+}
+rollback { DEPTH }
+
+top   :: i32 = name "(" digit ")" %emit{ push(100); $$ = 1; } | name "(" ")" %emit{ push(200); $$ = 2; } | name ":" name %emit{ push(300); $$ = 3; } | name %emit{ push(400); $$ = 4; }
+name  :: i32 = "a" %emit{ push(1); } | "b" %emit{ push(1); } | "c" %emit{ push(1); }
+digit :: i32 = "0" %emit{ push(2); } | "1" %emit{ push(2); }

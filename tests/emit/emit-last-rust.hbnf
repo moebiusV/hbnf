@@ -1,0 +1,13 @@
+; tests/emit/emit-last.hbnf for the Rust backend: an alternative of an emit rule that ends with its emit, and a choice between them
+language Rust
+prefix none
+whitespace none
+{
+pub static mut TRACE: String = String::new();
+fn note(s: &str) {
+    unsafe { (*std::ptr::addr_of_mut!(TRACE)).push_str(s); }
+}
+}
+top = word-a %emit{ note("one"); } / word-ab %emit{ note("two"); }
+word-a  = "a"
+word-ab = "a" "b"

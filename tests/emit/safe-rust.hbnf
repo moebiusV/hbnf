@@ -1,0 +1,15 @@
+; tests/emit/safe.hbnf for the Rust backend: every emit is where nothing can retry past it.  A rule of characters (`key`) is read as text
+; and is a variable of the emit that names it; a rule that holds emits is a value, here a u8 when it declares none.
+language Rust
+prefix none
+whitespace none
+{
+pub static mut TRACE: String = String::new();
+fn note(s: &str) {
+    unsafe { (*std::ptr::addr_of_mut!(TRACE)).push_str(s); }
+}
+}
+top :: u32 = "{" %emit{ note("{"); $$ = 0; } [ pair *( "," pair ) ] "}" %emit{ note("}"); }
+pair :: u32 = key ":" val %emit{ note("p:"); note(&key); }
+key = 0x61..0x7A
+val = "t" %emit{ note("y"); } | "f" %emit{ note("n"); } | top

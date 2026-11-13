@@ -1,0 +1,14 @@
+; tests/emit/prefix-lits.hbnf for the Zig backend: alternatives that begin with literals, one the front of the other, each with its emit
+language Zig
+prefix none
+whitespace none
+{
+pub var trace: [200]u8 = undefined;
+pub var trace_len: usize = 0;
+fn note(s: []const u8) void {
+    @memcpy(trace[trace_len .. trace_len + s.len], s);
+    trace_len += s.len;
+}
+}
+top = "[[" %emit{ note("array_table"); } key "]]" / "[" %emit{ note("table"); } key "]"
+key = 1*0x61..0x7a

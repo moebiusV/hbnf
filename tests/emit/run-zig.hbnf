@@ -1,0 +1,7 @@
+; tests/emit/run.hbnf for the Zig backend: the code of an %emit is the grammar's own, so it is Zig here.
+; `$$` is the rule's value, an element is a variable: a list's value is the number of `t` in it, nested lists included
+language Zig
+prefix none
+whitespace none
+list :: i32 = "[" %emit{ $$ = 0; } [ item %emit{ $$ += item; } *( "," item %emit{ $$ += item; } ) ] "]"
+item :: i32 = "t" %emit{ $$ = 1; } | "f" %emit{ $$ = 0; } | list %emit{ $$ = list; }

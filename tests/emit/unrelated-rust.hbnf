@@ -1,0 +1,12 @@
+; tests/emit/unrelated.hbnf for the Rust backend: `pair` can end the way `top` goes on, but nothing after it retries it past an emit.
+language Rust
+prefix none
+whitespace none
+{
+pub static mut TRACE: String = String::new();
+fn note(s: &str) {
+    unsafe { (*std::ptr::addr_of_mut!(TRACE)).push_str(s); }
+}
+}
+top = pair "z" %emit{ note("done"); }
+pair = "x" | "xy"

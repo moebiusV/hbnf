@@ -23,13 +23,12 @@ for f in read safe unrelated emit-last prefix-lits; do
 	"$CLI" tests/emit/$f.hbnf --backend=c > "$W/$f.c" 2> "$W/$f.err" \
 		|| { echo "emit: FAIL ($f: $(head -c 200 "$W/$f.err"))"; fail=1; }
 done
-for b in rust zig; do
-	"$CLI" tests/emit/safe.hbnf --backend=$b 2>&1 > /dev/null | grep -q 'has an %emit, which only the C and Ada backends generate so far' \
-		|| { echo "emit: FAIL (safe: $b does not refuse an %emit by name)"; fail=1; }
+# the code of an %emit is the grammar's own: C here, so every other backend says so (a file that says `language Ada`, `Zig` or `Rust`
+# is generated, below)
+for b in ada zig rust; do
+	"$CLI" tests/emit/safe.hbnf --backend=$b 2>&1 > /dev/null | grep -q 'which is code written in C' \
+		|| { echo "emit: FAIL (safe: $b does not refuse C code in an %emit)"; fail=1; }
 done
-# the code of an %emit is the grammar's own: C here, so Ada says so (a file that says `language Ada` is generated, below)
-"$CLI" tests/emit/safe.hbnf --backend=ada 2>&1 > /dev/null | grep -q 'which is code written in C' \
-	|| { echo "emit: FAIL (safe: ada does not refuse C code in an %emit)"; fail=1; }
 # the generated parser runs the emits in order, with `$$` and the elements as variables, and a
 # parse that fails reports where without running them again
 "$CLI" tests/emit/run.hbnf --backend=c > "$W/run.c" 2> "$W/run.err" \
@@ -194,5 +193,105 @@ CASES
 		ada_run prefix-lits trace_check '[ab]' table; ada_run prefix-lits trace_check '[[ab]]' array_table; ada_run prefix-lits trace_check '[ab]]' error
 	fi
 fi
-[ $fail = 0 ] && echo "emit: OK (types read; %emit analysed and generated in C and in Ada, each retry refused)"
+# the Zig backend generates the %emit of a file that says `language Zig` (the code is Zig: `$$` is `rv`, an element is a local variable,
+# `rollback { place }` is a place the emits change, saved and stored again), and gives the same answers
+if command -v zig > /dev/null 2>&1; then
+	zig_case() {   # NAME DRIVER: the grammar tests/emit/NAME-zig.hbnf and the driver tests/emit/zig/DRIVER.zig, built together
+		d=$W/zig-$1; rm -rf "$d"; mkdir -p "$d"
+		"$CLI" tests/emit/$1-zig.hbnf --backend=zig > "$d/l.zig" 2> "$d/err" \
+			|| { echo "emit: FAIL (zig $1: $(head -c 200 "$d/err"))"; fail=1; return 1; }
+		cp "tests/emit/zig/$2.zig" "$d/"
+		(cd "$d" && zig build-exe "$2.zig" -O Debug -femit-bin=drv > cc.txt 2>&1) \
+			|| { echo "emit: FAIL (zig $1 does not compile: $(grep -m2 error "$d/cc.txt" | head -c 300))"; fail=1; return 1; }
+		return 0
+	}
+	zig_run() {   # NAME INPUT WANT
+		got=$("$W/zig-$1/drv" "$2" 2>&1 | head -1)
+		[ "$got" = "$3" ] || { echo "emit: FAIL (zig $1 $2: got '$got', wanted '$3')"; fail=1; }
+	}
+	if zig_case run run_main; then
+		while IFS== read -r input want; do zig_run run "$input" "$want"; done <<'CASES'
+[]=0
+[t]=1
+[f]=0
+[t,f,[t,t]]=3
+[[[t]],[t,t],f]=3
+[t,[]=error 1:6
+[t,x=error 1:4
+CASES
+	fi
+	if zig_case runs runs_main; then
+		while IFS== read -r input want; do zig_run runs "$input" "$want"; done <<'CASES'
+a(1)=1 3 103
+b()=2 2 201
+c(0)=1 3 103
+c:a=3 3 302
+a:b=3 3 302
+a=4 2 401
+a(=error 1:3
+a(2)=error 1:3
+d=error 1:1
+b(1=error 1:4
+CASES
+	fi
+	if zig_case safe trace_main; then
+		zig_run safe '{}' '{}'; zig_run safe '{a:t}' '{yp:a}'; zig_run safe '{a:t,b:{c:f}}' '{yp:a{np:c}p:b}'; zig_run safe '{a:x}' 'error'
+	fi
+	if zig_case unrelated trace_main; then zig_run unrelated xz done; zig_run unrelated xyz error; fi
+	if zig_case emit-last trace_main; then zig_run emit-last a one; zig_run emit-last ab two; fi
+	if zig_case prefix-lits trace_main; then
+		zig_run prefix-lits '[ab]' table; zig_run prefix-lits '[[ab]]' array_table; zig_run prefix-lits '[ab]]' error
+	fi
+fi
+# the Rust backend generates the %emit of a file that says `language Rust` (the code is Rust: `$$` is `rv`, an element is a local variable,
+# `rollback { place }` is a place the emits change, read and stored again inside `unsafe`), and gives the same answers
+if command -v rustc > /dev/null 2>&1; then
+	rust_case() {   # NAME DRIVER: the grammar tests/emit/NAME-rust.hbnf and the driver tests/emit/rust/DRIVER.rs, built together
+		d=$W/rust-$1; rm -rf "$d"; mkdir -p "$d"
+		"$CLI" tests/emit/$1-rust.hbnf --backend=rust > "$d/l.rs" 2> "$d/err" \
+			|| { echo "emit: FAIL (rust $1: $(head -c 200 "$d/err"))"; fail=1; return 1; }
+		cp "tests/emit/rust/$2.rs" "$d/main.rs"
+		(cd "$d" && rustc --edition 2021 -A warnings -C opt-level=0 -o drv main.rs > cc.txt 2>&1) \
+			|| { echo "emit: FAIL (rust $1 does not compile: $(grep -m2 error "$d/cc.txt" | head -c 300))"; fail=1; return 1; }
+		return 0
+	}
+	rust_run() {   # NAME INPUT WANT
+		got=$("$W/rust-$1/drv" "$2" 2>&1 | head -1)
+		[ "$got" = "$3" ] || { echo "emit: FAIL (rust $1 $2: got '$got', wanted '$3')"; fail=1; }
+	}
+	if rust_case run run_main; then
+		while IFS== read -r input want; do rust_run run "$input" "$want"; done <<'CASES'
+[]=0
+[t]=1
+[f]=0
+[t,f,[t,t]]=3
+[[[t]],[t,t],f]=3
+[t,[]=error 1:6
+[t,x=error 1:4
+CASES
+	fi
+	if rust_case runs runs_main; then
+		while IFS== read -r input want; do rust_run runs "$input" "$want"; done <<'CASES'
+a(1)=1 3 103
+b()=2 2 201
+c(0)=1 3 103
+c:a=3 3 302
+a:b=3 3 302
+a=4 2 401
+a(=error 1:3
+a(2)=error 1:3
+d=error 1:1
+b(1=error 1:4
+CASES
+	fi
+	if rust_case safe trace_main; then
+		rust_run safe '{}' '{}'; rust_run safe '{a:t}' '{yp:a}'; rust_run safe '{a:t,b:{c:f}}' '{yp:a{np:c}p:b}'; rust_run safe '{a:x}' 'error'
+	fi
+	if rust_case unrelated trace_main; then rust_run unrelated xz done; rust_run unrelated xyz error; fi
+	if rust_case emit-last trace_main; then rust_run emit-last a one; rust_run emit-last ab two; fi
+	if rust_case prefix-lits trace_main; then
+		rust_run prefix-lits '[ab]' table; rust_run prefix-lits '[[ab]]' array_table; rust_run prefix-lits '[ab]]' error
+	fi
+fi
+[ $fail = 0 ] && echo "emit: OK (types read; %emit analysed and generated in C, Ada, Zig and Rust, each retry refused)"
 exit $fail

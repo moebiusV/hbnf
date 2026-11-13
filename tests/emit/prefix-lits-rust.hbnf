@@ -1,0 +1,12 @@
+; tests/emit/prefix-lits.hbnf for the Rust backend: alternatives that begin with literals, one the front of the other, each with its emit
+language Rust
+prefix none
+whitespace none
+{
+pub static mut TRACE: String = String::new();
+fn note(s: &str) {
+    unsafe { (*std::ptr::addr_of_mut!(TRACE)).push_str(s); }
+}
+}
+top = "[[" %emit{ note("array_table"); } key "]]" / "[" %emit{ note("table"); } key "]"
+key = 1*0x61..0x7a

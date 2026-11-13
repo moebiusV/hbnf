@@ -1,0 +1,15 @@
+; tests/emit/unrelated.hbnf for the Zig backend: `pair` can end the way `top` goes on, but nothing after it retries it past an emit.
+; `pair` builds a tree and `top` holds an %emit, so `top` makes a value and calls a rule that makes a node.
+language Zig
+prefix none
+whitespace none
+{
+pub var trace: [200]u8 = undefined;
+pub var trace_len: usize = 0;
+fn note(s: []const u8) void {
+    @memcpy(trace[trace_len .. trace_len + s.len], s);
+    trace_len += s.len;
+}
+}
+top = pair "z" %emit{ note("done"); }
+pair = "x" | "xy"

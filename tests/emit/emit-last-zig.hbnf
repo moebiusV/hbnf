@@ -1,0 +1,15 @@
+; tests/emit/emit-last.hbnf for the Zig backend: an alternative of an emit rule that ends with its emit, and a choice between them
+language Zig
+prefix none
+whitespace none
+{
+pub var trace: [200]u8 = undefined;
+pub var trace_len: usize = 0;
+fn note(s: []const u8) void {
+    @memcpy(trace[trace_len .. trace_len + s.len], s);
+    trace_len += s.len;
+}
+}
+top = word-a %emit{ note("one"); } / word-ab %emit{ note("two"); }
+word-a  = "a"
+word-ab = "a" "b"

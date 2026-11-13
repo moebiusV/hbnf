@@ -587,11 +587,40 @@ package body HBNF_Zig is
 
    package Info_Vectors is new Ada.Containers.Vectors (Positive, Rule_Info);
 
+   --  Whether a pattern holds an `%emit` (groups too).
+   function Holds_Emit (V : Element_Vectors.Vector) return Boolean is
+   begin
+      for E of V loop
+         if (E.Kind = Block and then E.Op = B_Emit) or else (E.Kind = Group and then Holds_Emit (E.Items)) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Holds_Emit;
+
+   --  The Zig type of the value a rule makes: the one it declares (`name :: u32 = ...`), or `u8` for a rule that only holds an
+   --  `%emit`; empty for a rule that builds a tree.
+   function Emit_Value_Type (R : Rule) return String is
+      T : constant String := HBNF_Grammar.Value_Type (To_String (R.Name));
+   begin
+      if T /= "" then
+         return T;
+      elsif Holds_Emit (R.Pattern) then
+         return "u8";
+      end if;
+      return "";
+   end Emit_Value_Type;
+
    function Analyze (Rules : Rule_Vectors.Vector; Idx : Natural)
      return Rule_Info is
       R : constant Rule := Rules (Idx);
       P : constant Element_Vectors.Vector := R.Pattern;
    begin
+      if Emit_Value_Type (R) /= "" then
+         --  a rule that makes a value (`name :: Type = ...`, or holds an `%emit`) has no node: its type is the value's
+         return (Kind        => Scalar,
+                 Inline_Type => To_Unbounded_String (Emit_Value_Type (R)));
+      end if;
       if Is_Char_Rule (Rules, To_String (R.Name)) then
          --  A character-level rule compiles to a scanner and a token; its
          --  value is the matched text, so it is a scalar string.
@@ -4027,6 +4056,223 @@ package body HBNF_Zig is
          end;
       end Emit_Alternation;
 
+      --  A rule that declares a value (`name :: Type = ...`) or holds an `%emit`: a function that runs its pattern and returns the
+      --  value, with no tree node.  `%emit{ code }` is the author's own Zig, run where its place in the sequence is reached, `$$` the
+      --  value being made (`rv`), each element a local variable of its rule's name.  A choice gives back what it read when a way
+      --  fails, and puts back what `rollback { place }` names (a place the emits change, saved and stored again).
+      procedure Emit_Valued (Idx : Natural; Buf : in out U) is
+         R   : constant Rule := Rules (Idx);
+         RN  : constant String := To_String (R.Name);
+         Lbl : Natural := 0;
+         Seen : String_Vectors.Vector;
+         Rb  : String_Vectors.Vector;
+
+         procedure Unsupported (What : String) is
+         begin
+            raise Parse_Error with "rule `" & RN & "` runs an %emit, and " & What & " is not generated for Zig in such a rule yet";
+         end Unsupported;
+
+         function Fresh return String is
+         begin
+            Lbl := Lbl + 1;
+            return Img (Lbl);
+         end Fresh;
+
+         function Code_Of (Text : String) return String is
+            Res : U;
+            K   : Natural := Text'First;
+         begin
+            while K <= Text'Last loop
+               if K < Text'Last and then Text (K) = '$' and then Text (K + 1) = '$' then
+                  Append (Res, "rv");
+                  K := K + 2;
+               else
+                  Append (Res, Text (K));
+                  K := K + 1;
+               end if;
+            end loop;
+            return To_String (Res);
+         end Code_Of;
+
+         function Save (Tag : String) return String is
+            S : U;
+         begin
+            for K in 1 .. Natural (Rb.Length) loop
+               Append (S, " const rb" & Tag & "_" & Img (K) & " = " & To_String (Rb (K)) & ";");
+            end loop;
+            return To_String (S);
+         end Save;
+
+         function Restore (Tag : String) return String is
+            S : U;
+         begin
+            for K in 1 .. Natural (Rb.Length) loop
+               Append (S, To_String (Rb (K)) & " = rb" & Tag & "_" & Img (K) & "; ");
+            end loop;
+            return To_String (S);
+         end Restore;
+
+         procedure Locals (V : Element_Vectors.Vector) is
+         begin
+            for E of V loop
+               if E.Kind = Group then
+                  Locals (E.Items);
+               elsif E.Kind = Name then
+                  declare
+                     N : constant String := To_String (E.Name);
+                  begin
+                     if not Seen.Contains (E.Name) then
+                        Seen.Append (E.Name);
+                        Append (Buf, "    var " & Zig_Field (N) & ": " & Zig_Type_Of (Rules, N) & " = undefined;  _ = &" & Zig_Field (N) & ";" & LF);
+                     end if;
+                  end;
+               end if;
+            end loop;
+         end Locals;
+
+         procedure Gen (V : Element_Vectors.Vector; F, L : Natural; Fail, Ind : String);
+
+         procedure One (E : Element_Access; Fail, Ind : String) is
+            Single : constant Element_Vectors.Vector := Element_Vectors.To_Vector (E, 1);
+         begin
+            case E.Kind is
+               when Group =>
+                  Gen (E.Items, 1, Natural (E.Items.Length), Fail, Ind);
+               when Name =>
+                  declare
+                     N : constant String := To_String (E.Name);
+                     J : constant Natural := Find (Rules, N);
+                  begin
+                     if J > 0 and then Emit_Value_Type (Rules (J)) /= "" then
+                        if E.Args /= Null_Unbounded_String then
+                           Unsupported ("a call with parameters");
+                        end if;
+                        if Rules (Idx).Whitespace /= Null_Unbounded_String then
+                           Append (Buf, Ind & "p.skip_ws();" & LF);
+                        end if;
+                        Append (Buf, Ind & Zig_Field (N) & " = " & Rule_Fn (Zig_Snake (N)) & "(p) catch { " & Fail & "; };" & LF);
+                     else
+                        Emit_Seq (Idx, Single, 1, 1, "", Buf, Fail, Ind);
+                     end if;
+                  end;
+               when Block =>
+                  if E.Op = B_Emit then
+                     Append (Buf, Ind & "{" & LF & Ind & "    " & Code_Of (To_String (E.Code)) & LF & Ind & "}" & LF);
+                  else
+                     Unsupported ("a `" & HBNF_Grammar.Block_Op'Image (E.Op) & "` element");
+                  end if;
+               when Literal | Char_Range =>
+                  Emit_Seq (Idx, Single, 1, 1, "", Buf, Fail, Ind);
+               when others =>
+                  Unsupported ("this kind of element");
+            end case;
+         end One;
+
+         procedure Elem (E : Element_Access; Fail, Ind : String) is
+         begin
+            if E.Min = 1 and then E.Max = 1 then
+               One (E, Fail, Ind);
+               return;
+            end if;
+            declare
+               Id : constant String := Fresh;
+            begin
+               Append (Buf, Ind & "{ var cnt" & Id & ": usize = 0;" & LF
+                 & Ind & "  while (true) {" & LF
+                 & Ind & "    const sv" & Id & " = p.pos;" & Save ("l" & Id) & LF);
+               if E.Max >= 0 then
+                  Append (Buf, Ind & "    if (cnt" & Id & " >= " & Img (Natural (E.Max)) & ") break;" & LF);
+               end if;
+               Append (Buf, Ind & "    rep" & Id & ": {" & LF);
+               One (E, "break :rep" & Id, Ind & "        ");
+               Append (Buf, Ind & "        cnt" & Id & " += 1;" & LF
+                 & Ind & "        if (p.pos == sv" & Id & ") break;" & LF
+                 & Ind & "        continue;" & LF
+                 & Ind & "    }" & LF
+                 & Ind & "    p.pos = sv" & Id & "; " & Restore ("l" & Id) & "break;" & LF
+                 & Ind & "  }" & LF);
+               if E.Min > 0 then
+                  Append (Buf, Ind & "  if (cnt" & Id & " < " & Img (E.Min) & ") { " & Fail & "; }" & LF);
+               end if;
+               Append (Buf, Ind & "}" & LF);
+            end;
+         end Elem;
+
+         procedure Seq_Range (V : Element_Vectors.Vector; St, En : Natural; Fail, Ind : String) is
+         begin
+            for K in St .. En loop
+               Elem (V (K), Fail, Ind);
+            end loop;
+         end Seq_Range;
+
+         procedure Gen (V : Element_Vectors.Vector; F, L : Natural; Fail, Ind : String) is
+            Alts : Natural := 1;
+         begin
+            for K in F .. L loop
+               if V (K).Kind = Alt then
+                  Alts := Alts + 1;
+               end if;
+            end loop;
+            if Alts = 1 then
+               Seq_Range (V, F, L, Fail, Ind);
+               return;
+            end if;
+            declare
+               Id : constant String := Fresh;
+               Bs : constant HBNF_Lookahead.Bounds_Vectors.Vector := HBNF_Lookahead.Branches (V);
+               N  : Natural := 0;
+            begin
+               Append (Buf, Ind & "done" & Id & ": {" & LF
+                 & Ind & "    const as" & Id & " = p.pos;" & Save ("a" & Id) & LF);
+               for Br of Bs loop
+                  N := N + 1;
+                  if N < Natural (Bs.Length) then
+                     Append (Buf, Ind & "    b" & Id & "_" & Img (N) & ": {" & LF);
+                     Seq_Range (V, Br.First, Br.Last, "break :b" & Id & "_" & Img (N), Ind & "        ");
+                     Append (Buf, Ind & "        break :done" & Id & ";" & LF
+                       & Ind & "    }" & LF
+                       & Ind & "    p.pos = as" & Id & "; " & Restore ("a" & Id) & LF);
+                  else
+                     Seq_Range (V, Br.First, Br.Last, Fail, Ind & "    ");
+                  end if;
+               end loop;
+               Append (Buf, Ind & "}" & LF);
+            end;
+         end Gen;
+      begin
+         declare
+            T : constant String := HBNF_Grammar.Rollback_State;
+            B : Natural := T'First;
+            Depth : Integer := 0;
+         begin
+            for K in T'First .. T'Last + 1 loop
+               if K > T'Last or else (T (K) = ',' and then Depth = 0) then
+                  declare
+                     Item : constant String := Ada.Strings.Fixed.Trim (T (B .. K - 1), Ada.Strings.Both);
+                  begin
+                     if Item /= "" then
+                        Rb.Append (To_Unbounded_String (Item));
+                     end if;
+                  end;
+                  B := K + 1;
+               elsif T (K) in '(' | '[' then
+                  Depth := Depth + 1;
+               elsif T (K) in ')' | ']' then
+                  Depth := Depth - 1;
+               end if;
+            end loop;
+         end;
+         Append (Buf, "    var rv: " & Ret_Type (Idx) & " = undefined;  _ = &rv;" & LF
+           & "    const start = p.pos;" & LF);
+         Locals (R.Pattern);
+         Append (Buf, "    rf: {" & LF);
+         Gen (R.Pattern, 1, Natural (R.Pattern.Length), "break :rf", "        ");
+         Append (Buf, "        return rv;" & LF
+           & "    }" & LF
+           & "    p.pos = start;" & LF
+           & "    return error.Invalid;" & LF);
+      end Emit_Valued;
+
       procedure Emit_Rule_Parser (Idx : Natural; Buf : in out U) is
          R  : constant Rule := Rules (Idx);
          P  : constant Element_Vectors.Vector := R.Pattern;
@@ -5385,7 +5631,11 @@ package body HBNF_Zig is
                         Append (Res, LF);
                      end if;
                   end if;
-                  Emit_Rule_Parser (I, Res);
+                  if Emit_Value_Type (Rules (I)) /= "" then
+                     Emit_Valued (I, Res);
+                  else
+                     Emit_Rule_Parser (I, Res);
+                  end if;
                   Append (Res, "}");
                   Append (Res, LF);
                   Append (Res, LF);

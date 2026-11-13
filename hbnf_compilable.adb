@@ -1309,18 +1309,18 @@ package body HBNF_Compilable is
       --  goes to the backend of that language; Ada generates it so far, Rust and Zig say so by rule name
       for I in 1 .. N loop
          if Has_Direct (Rules (I).Pattern) then
-            if Backend not in "c" | "ada" then
+            if Backend not in "c" | "ada" | "zig" | "rust" then
                raise Parse_Error with
-                 "rule `" & To_String (Rules (I).Name) & "` has an %emit, which only the C and Ada "
+                 "rule `" & To_String (Rules (I).Name) & "` has an %emit, which only the C, Ada, Zig and Rust "
                  & "backends generate so far";
-            elsif HBNF_Grammar.Language /= (if Backend = "ada" then "Ada" else "C") then
+            elsif HBNF_Grammar.Language /= (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C") then
                raise Parse_Error with
                  "rule `" & To_String (Rules (I).Name) & "` has an %emit, which is code written in "
                  & HBNF_Grammar.Language & " (the file's `language` line, C if it has none), so it can be emitted in "
-                 & HBNF_Grammar.Language & ", not in " & (if Backend = "ada" then "Ada" else "C")
-                 & ".  For " & (if Backend = "ada" then "Ada" else "C") & ", write the same code in "
-                 & (if Backend = "ada" then "Ada" else "C") & " in a file that says `language "
-                 & (if Backend = "ada" then "Ada" else "C") & "`";
+                 & HBNF_Grammar.Language & ", not in " & (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C")
+                 & ".  For " & (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C") & ", write the same code in "
+                 & (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C") & " in a file that says `language "
+                 & (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C") & "`";
             end if;
          end if;
       end loop;
