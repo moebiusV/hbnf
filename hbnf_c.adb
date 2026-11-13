@@ -6553,30 +6553,31 @@ package body HBNF_C is
                   N    : constant Natural := Els (K).Id;
                   Gid  : constant String := Sid & "_" & Ctx_Img (K);
                   Req  : Natural := 0;
+                  Req_C : Unbounded_String;   --  the test that the members that may not be left out were all taken
                   Pk   : constant Character := HBNF_Grammar.Pick_Kind (Els (K));   --  `choose` (C), `permute` (P), or ' '
                   Cmb  : constant Boolean := Pk = 'C';   --  the members taken in the order written: one pass, no restart
                   PMin : constant Natural := HBNF_Grammar.Pick_Min (Els (K));
                   PMax : constant Natural := HBNF_Grammar.Pick_Max (Els (K));
                begin
-                  Append (Buf, Ind & "{ unsigned ao" & Gid & " = 0;" & LF);
+                  Append (Buf, Ind & "{ unsigned char ao" & Gid & "[" & Img (N) & "] = {0}; unsigned an" & Gid & " = 0;" & LF);
                   if not Cmb then
                      Append (Buf, Ind & "  for (;;) {" & LF);
                      if Pk /= ' ' then
-                        Append (Buf, Ind & "    if (__builtin_popcount (ao" & Gid & ") >= " & Img (PMax) & ") break;" & LF);
+                        Append (Buf, Ind & "    if (an" & Gid & " >= " & Img (PMax) & ") break;" & LF);
                      end if;
                   end if;
                   for J in 1 .. N loop
                      declare
                         Mem : constant Element_Access := new HBNF_Grammar.Element'(Els (K + J).all);
                         Sj  : constant String := Gid & "_" & Img (J);
-                        Bit : constant Natural := 2 ** (J - 1);
                         Snap : constant Boolean := Node_Ptr /= "0";   --  a node to give back when the member does not match
                      begin
                         if Ada.Strings.Unbounded.Element (Els (K).Path, J) = '1' then
-                           Req := Req + Bit;
+                           Req := Req + 1;
+                           Append (Req_C, (if Length (Req_C) = 0 then "" else " && ") & "ao" & Gid & "[" & Img (J - 1) & "]");
                         end if;
-                        Append (Buf, Ind & "    if (" & (if Cmb then "__builtin_popcount (ao" & Gid & ") < " & Img (PMax)
-                                                   else "!(ao" & Gid & " & " & Img (Bit) & "u)")
+                        Append (Buf, Ind & "    if (" & (if Cmb then "an" & Gid & " < " & Img (PMax)
+                                                   else "!ao" & Gid & "[" & Img (J - 1) & "]")
                           & ") { size_t sv" & Sj & " = p->pos;"
                           & (if Snap then "  unsigned char rb" & Sj & "[sizeof *(" & Node_Ptr & ")];  memcpy (rb" & Sj & ", "
                                           & Node_Ptr & ", sizeof rb" & Sj & ");" else "") & LF);
@@ -6586,7 +6587,7 @@ package body HBNF_C is
                                   & " goto no" & Sj & "; }",
                                   Ind & "      ", Ws, Seg_Var => Seg_Var, Alt_Tape => Alt_Tape);
                         --  a member that matched nothing (one that may be empty) is not taken: it would shut out a later one
-                        Append (Buf, Ind & "      if (p->pos > sv" & Sj & ") { ao" & Gid & " |= " & Img (Bit) & "u;"
+                        Append (Buf, Ind & "      if (p->pos > sv" & Sj & ") { ao" & Gid & "[" & Img (J - 1) & "] = 1; an" & Gid & "++;"
                           & (if Cmb then "" else "  continue;") & " } }" & LF
                           & Ind & "    no" & Sj & ": ;" & LF);
                      end;
@@ -6596,12 +6597,12 @@ package body HBNF_C is
                   end if;
                   if Pk /= ' ' then
                      if PMin > 0 then
-                        Append (Buf, Ind & "  if (__builtin_popcount (ao" & Gid & ") < " & Img (PMin) & ") { " & Fail & " }" & LF);
+                        Append (Buf, Ind & "  if (an" & Gid & " < " & Img (PMin) & ") { " & Fail & " }" & LF);
                      end if;
                   elsif Req > 0 then
-                     Append (Buf, Ind & "  if ((ao" & Gid & " & " & Img (Req) & "u) != " & Img (Req) & "u) { " & Fail & " }" & LF);
+                     Append (Buf, Ind & "  if (!(" & To_String (Req_C) & ")) { " & Fail & " }" & LF);
                   elsif Els (K).Code /= Null_Unbounded_String then
-                     Append (Buf, Ind & "  if (!ao" & Gid & ") { " & Fail & " }" & LF);   --  `any of`: not none
+                     Append (Buf, Ind & "  if (!an" & Gid & ") { " & Fail & " }" & LF);   --  `any of`: not none
                   end if;
                   Append (Buf, Ind & "}" & LF);
                   Skip_To := K + N;
@@ -8736,34 +8737,35 @@ package body HBNF_C is
                      N    : constant Natural := V (K).Id;
                      Gid  : constant String := Fresh;
                      Req  : Natural := 0;
+                  Req_C : Unbounded_String;   --  the test that the members that may not be left out were all taken
                      Pk   : constant Character := HBNF_Grammar.Pick_Kind (V (K));
                      Cmb  : constant Boolean := Pk = 'C';
                      PMin : constant Natural := HBNF_Grammar.Pick_Min (V (K));
                      PMax : constant Natural := HBNF_Grammar.Pick_Max (V (K));
                   begin
                      Skip_Done := False;
-                     Append (Buf, Ind & "{ unsigned ao" & Gid & " = 0;" & LF);
+                     Append (Buf, Ind & "{ unsigned char ao" & Gid & "[" & Img (N) & "] = {0}; unsigned an" & Gid & " = 0;" & LF);
                      if not Cmb then
                         Append (Buf, Ind & "  for (;;) {" & LF);
                         if Pk /= ' ' then
-                           Append (Buf, Ind & "    if (__builtin_popcount (ao" & Gid & ") >= " & Img (PMax) & ") break;" & LF);
+                           Append (Buf, Ind & "    if (an" & Gid & " >= " & Img (PMax) & ") break;" & LF);
                         end if;
                      end if;
                      for J in 1 .. N loop
                         declare
                            Mem : constant Element_Access := new HBNF_Grammar.Element'(V (K + J).all);
                            Sj  : constant String := Gid & "_" & Img (J);
-                           Bit : constant Natural := 2 ** (J - 1);
                         begin
                            if Ada.Strings.Unbounded.Element (V (K).Path, J) = '1' then
-                              Req := Req + Bit;
+                              Req := Req + 1;
+                           Append (Req_C, (if Length (Req_C) = 0 then "" else " && ") & "ao" & Gid & "[" & Img (J - 1) & "]");
                            end if;
-                           Append (Buf, Ind & "    if (" & (if Cmb then "__builtin_popcount (ao" & Gid & ") < " & Img (PMax)
-                                                      else "!(ao" & Gid & " & " & Img (Bit) & "u)")
+                           Append (Buf, Ind & "    if (" & (if Cmb then "an" & Gid & " < " & Img (PMax)
+                                                      else "!ao" & Gid & "[" & Img (J - 1) & "]")
                              & ") { size_t sv" & Sj & " = p->pos;  " & Save ("l" & Sj) & LF);
                            Elem (Mem, "{ p->pos = sv" & Sj & "; " & Restore ("l" & Sj) & "goto no" & Sj & "; }",
                                  Ind & "      ");
-                           Append (Buf, Ind & "      if (p->pos > sv" & Sj & ") { ao" & Gid & " |= " & Img (Bit) & "u;"
+                           Append (Buf, Ind & "      if (p->pos > sv" & Sj & ") { ao" & Gid & "[" & Img (J - 1) & "] = 1; an" & Gid & "++;"
                              & (if Cmb then "" else "  continue;") & " } }" & LF
                              & Ind & "    no" & Sj & ": ;" & LF);
                            Skip_Done := False;
@@ -8774,12 +8776,12 @@ package body HBNF_C is
                      end if;
                      if Pk /= ' ' then
                         if PMin > 0 then
-                           Append (Buf, Ind & "  if (__builtin_popcount (ao" & Gid & ") < " & Img (PMin) & ") { " & Fail & " }" & LF);
+                           Append (Buf, Ind & "  if (an" & Gid & " < " & Img (PMin) & ") { " & Fail & " }" & LF);
                         end if;
                      elsif Req > 0 then
-                        Append (Buf, Ind & "  if ((ao" & Gid & " & " & Img (Req) & "u) != " & Img (Req) & "u) { " & Fail & " }" & LF);
+                        Append (Buf, Ind & "  if (!(" & To_String (Req_C) & ")) { " & Fail & " }" & LF);
                      elsif V (K).Code /= Null_Unbounded_String then
-                        Append (Buf, Ind & "  if (!ao" & Gid & ") { " & Fail & " }" & LF);   --  `any of`: not none
+                        Append (Buf, Ind & "  if (!an" & Gid & ") { " & Fail & " }" & LF);   --  `any of`: not none
                      end if;
                      Append (Buf, Ind & "}" & LF);
                      K := K + 1 + N;

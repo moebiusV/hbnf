@@ -3173,6 +3173,7 @@ package body HBNF_Zig is
                   N    : constant Natural := Els (K).Id;
                   Gid  : constant String := Sid & "_" & Img (K);
                   Req  : Natural := 0;
+                  Req_C : Unbounded_String;   --  the test that the members that may not be left out were all taken
                   Pk   : constant Character := HBNF_Grammar.Pick_Kind (Els (K));
                   Cmb  : constant Boolean := Pk = 'C';
                   PMin : constant Natural := HBNF_Grammar.Pick_Min (Els (K));
@@ -3192,28 +3193,28 @@ package body HBNF_Zig is
                      end loop;
                   end Reset_Fields;
                begin
-                  Append (Buf, Ind & "{ var ao" & Gid & ": u32 = 0;");
+                  Append (Buf, Ind & "{ var ao" & Gid & " = [_]bool{false} ** " & Img (N) & "; var an" & Gid & ": u32 = 0; _ = &an" & Gid & ";");
                   Append (Buf, LF);
                   if not Cmb then
                      Append (Buf, Ind & "  while (true) {");
                      Append (Buf, LF);
                      if Pk /= ' ' then
-                        Append (Buf, Ind & "    if (@popCount(ao" & Gid & ") >= " & Img (PMax) & ") break;");
+                        Append (Buf, Ind & "    if (an" & Gid & " >= " & Img (PMax) & ") break;");
                         Append (Buf, LF);
                      end if;
                   end if;
                   for J in 1 .. N loop
                      declare
                         Mem : constant Element_Access := new HBNF_Grammar.Element'(Els (K + J).all);
-                        Bit : constant Natural := 2 ** (J - 1);
                         Sj  : constant String := Gid & "_" & Img (J);
                         Rs0 : Natural;
                      begin
                         if Ada.Strings.Unbounded.Element (Els (K).Path, J) = '1' then
-                           Req := Req + Bit;
+                           Req := Req + 1;
+                           Append (Req_C, (if Length (Req_C) = 0 then "" else " and ") & "ao" & Gid & "[" & Img (J - 1) & "]");
                         end if;
-                        Append (Buf, Ind & "    if (" & (if Cmb then "@popCount(ao" & Gid & ") < " & Img (PMax)
-                                                        else "ao" & Gid & " & " & Img (Bit) & " == 0") & ") {");
+                        Append (Buf, Ind & "    if (" & (if Cmb then "an" & Gid & " < " & Img (PMax)
+                                                        else "!ao" & Gid & "[" & Img (J - 1) & "]") & ") {");
                         Append (Buf, LF);
                         Append (Buf, Ind & "      const sv" & Sj & " = p.pos;" & (if Ctx_On then " const cp" & Sj & " = p.cx_mark();" else "")
                           & " var ok" & Sj & " = false;");
@@ -3230,7 +3231,7 @@ package body HBNF_Zig is
                         Append (Buf, Ind & "      if (!ok" & Sj & ") { p.pos = sv" & Sj & ";"
                           & (if Ctx_On then " p.cx_reset(&cp" & Sj & ");" else ""));
                         Reset_Fields (Element_Vectors.To_Vector (Mem, 1));
-                        Append (Buf, " } else if (p.pos > sv" & Sj & ") { ao" & Gid & " |= " & Img (Bit) & ";"
+                        Append (Buf, " } else if (p.pos > sv" & Sj & ") { ao" & Gid & "[" & Img (J - 1) & "] = true; an" & Gid & " += 1;"
                           & (if Cmb then "" else " continue;") & " }");
                         Append (Buf, LF);
                         Append (Buf, Ind & "    }");
@@ -3245,16 +3246,16 @@ package body HBNF_Zig is
                   end if;
                   if Pk /= ' ' then
                      if PMin > 0 then
-                        Append (Buf, Ind & "  if (@popCount(ao" & Gid & ") < " & Img (PMin) & ") { " & Pref
+                        Append (Buf, Ind & "  if (an" & Gid & " < " & Img (PMin) & ") { " & Pref
                           & "p.fail(""the members of the group"")" & Cat & "; }");
                         Append (Buf, LF);
                      end if;
                   elsif Req > 0 then
-                     Append (Buf, Ind & "  if ((ao" & Gid & " & " & Img (Req) & ") != " & Img (Req) & ") { " & Pref
+                     Append (Buf, Ind & "  if (!(" & To_String (Req_C) & ")) { " & Pref
                        & "p.fail(""all of the members of the group"")" & Cat & "; }");
                      Append (Buf, LF);
                   elsif Els (K).Code /= Null_Unbounded_String then
-                     Append (Buf, Ind & "  if (ao" & Gid & " == 0) { " & Pref
+                     Append (Buf, Ind & "  if (an" & Gid & " == 0) { " & Pref
                        & "p.fail(""one of the members of the group"")" & Cat & "; }");
                      Append (Buf, LF);
                   end if;

@@ -143,6 +143,7 @@ n=$((n + 1))
 # `all of ( a [b] c )` (R649): each member once, in any order, a member in `[ ]` may be left out; one field for each member
 chk tests/setlogic/allof.hbnf "ok Dp1." "ok Dp1usage." "ok Dusagep1." "ok Dv2p1." "ok Dv2usagep1." "ok Dp1usagev2." "ok Dv2p1usage." "ok Dusagev2p1." \
 	"bad D." "bad Dusage." "bad Dp1p2." "bad Dp1usageusage." "bad Dp1v2v3." "bad Dp1"
+chk tests/setlogic/allof-many.hbnf "ok D01;40;." "ok D40;01;." "ok D01;20;40;." "ok D30;40;20;01;." "bad D01;." "bad D40;." "bad D01;01;40;." "bad D01;41;40;."
 chk tests/setlogic/someof.hbnf "ok Dp1." "ok Dusage." "ok Dv2usagep1." "ok Dusagep1v2." "bad D." "bad Dp1p2." "bad Dusageusage." "bad Dx."
 chk tests/setlogic/anyof.hbnf "ok D." "ok Dp1." "ok Dusagep1." "ok Dp1usage." "bad Dp1p2." "bad Dx."
 chk tests/setlogic/permute.hbnf "ok Dab." "ok Dba." "ok Dac." "ok Dca." "ok Dbc." "ok Dcb." "bad Da." "bad Dabc." "bad Daa." "bad D."

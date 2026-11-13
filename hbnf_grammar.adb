@@ -5284,8 +5284,6 @@ package body HBNF_Grammar is
             Next (P);
             if N = 0 then
                raise Parse_Error with Where & "`all of ( )` has no member";
-            elsif N > 30 then
-               raise Parse_Error with Where & "`all of ( ... )` has up to 30 members; split it";
             end if;
             Items.Prepend (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Any_Order, Ctx => <>, Path => Mask,
                                         Id => N, Look => <>,
@@ -5538,10 +5536,10 @@ package body HBNF_Grammar is
                         Mem.Append (X);
                         Append (Mask, '0');
                      end loop;
-                     if Mem.Is_Empty or else Natural (Mem.Length) > 30 then
+                     if Mem.Is_Empty then
                         raise Parse_Error with
                           Integer'Image (Cur (P).Line) & ":" & Integer'Image (Cur (P).Col)
-                          & ": `choose` and `permute` take from 1 to 30 members";
+                          & ": `choose` and `permute` take at least one member";
                      end if;
                      if not Held then
                         V.Delete_Last;

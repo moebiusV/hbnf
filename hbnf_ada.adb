@@ -1976,7 +1976,7 @@ package body HBNF_Ada is
                begin
                   Append (Buf, Ind & "declare");
                   Append (Buf, LF);
-                  Append (Buf, Ind & "   Ao_" & Gid & " : Natural := 0;  Cnt_" & Gid & " : Natural := 0;");
+                  Append (Buf, Ind & "   Ao_" & Gid & " : array (1 .. " & Img (N) & ") of Boolean := (others => False);  Cnt_" & Gid & " : Natural := 0;");
                   Append (Buf, LF);
                   Append (Buf, Ind & "begin");
                   Append (Buf, LF);
@@ -1991,18 +1991,17 @@ package body HBNF_Ada is
                   for J in 1 .. N loop
                      declare
                         Mem : constant Element_Access := new HBNF_Grammar.Element'(Els (K + J).all);
-                        Bit : constant Natural := 2 ** (J - 1);
                         Sj  : constant String := Gid & "_" & Img (J);
                      begin
                         if Ada.Strings.Unbounded.Element (Els (K).Path, J) = '1' then
-                           Req := Req + Bit;
+                           Req := Req + 1;
                            if Length (Req_Cond) > 0 then
                               Append (Req_Cond, " and then ");
                            end if;
-                           Append (Req_Cond, "(Ao_" & Gid & " / " & Img (Bit) & ") mod 2 = 1");
+                           Append (Req_Cond, "Ao_" & Gid & " (" & Img (J) & ")");
                         end if;
                         Append (Buf, Ind & "      if " & (if Cmb then "Cnt_" & Gid & " < " & Img (PMax)
-                                                         else "(Ao_" & Gid & " / " & Img (Bit) & ") mod 2 = 0") & " then");
+                                                         else "not Ao_" & Gid & " (" & Img (J) & ")") & " then");
                         Append (Buf, LF);
                         Append (Buf, Ind & "         declare");
                         Append (Buf, LF);
@@ -2017,7 +2016,7 @@ package body HBNF_Ada is
                         FA := Save_FA;
                         Append (Buf, Ind & "            if P.Pos > Sv_" & Sj & " then");
                         Append (Buf, LF);
-                        Append (Buf, Ind & "               Ao_" & Gid & " := Ao_" & Gid & " + " & Img (Bit) & ";  Cnt_" & Gid & " := Cnt_" & Gid & " + 1;");
+                        Append (Buf, Ind & "               Ao_" & Gid & " (" & Img (J) & ") := True;  Cnt_" & Gid & " := Cnt_" & Gid & " + 1;");
                         Append (Buf, LF);
                         if not Cmb then
                            Append (Buf, Ind & "               goto Nx_" & Gid & ";");
@@ -2056,7 +2055,7 @@ package body HBNF_Ada is
                        & To_String (FA) & " end if;");
                      Append (Buf, LF);
                   elsif Els (K).Code /= Null_Unbounded_String then
-                     Append (Buf, Ind & "   if Ao_" & Gid & " = 0 then Fail (P, ""one of the members of the group""); "
+                     Append (Buf, Ind & "   if Cnt_" & Gid & " = 0 then Fail (P, ""one of the members of the group""); "
                        & To_String (FA) & " end if;");
                      Append (Buf, LF);
                   end if;
