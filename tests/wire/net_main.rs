@@ -10,12 +10,12 @@ fn eth(rest: &[&[u8]]) -> Vec<u8> {
     v
 }
 
-fn kind(p: &BnfEthernetPayload) -> i32 {
+fn kind(p: &HyperEthernetPayload) -> i32 {
     match p {
-        BnfEthernetPayload::A1 { .. } => 1,
-        BnfEthernetPayload::A2 { .. } => 2,
-        BnfEthernetPayload::A3 { .. } => 3,
-        BnfEthernetPayload::A4 { .. } => 4,
+        HyperEthernetPayload::A1 { .. } => 1,
+        HyperEthernetPayload::A2 { .. } => 2,
+        HyperEthernetPayload::A3 { .. } => 3,
+        HyperEthernetPayload::A4 { .. } => 4,
     }
 }
 
@@ -29,31 +29,31 @@ fn show(what: &str, b: &[u8]) {
     };
     print!("{}: ethertype={:04x} kind={}", what, e.ethertype, kind(&e.payload));
     match &e.payload {
-        BnfEthernetPayload::A1 { ip } => {
+        HyperEthernetPayload::A1 { ip } => {
             print!(
                 " ipv4 ihl={} len={} ttl={} proto={} src={:08x} dst={:08x} opts={}",
                 ip.ihl, ip.total_length, ip.ttl, ip.protocol, ip.src, ip.dst, ip.options.len()
             );
             match &ip.payload {
-                BnfIpv4Payload::A1 { t } => print!(
+                HyperIpv4Payload::A1 { t } => print!(
                     " tcp {}>{} seq={} syn={} data={}",
                     t.src_port, t.dst_port, t.seq_num, t.syn, t.payload.len()
                 ),
-                BnfIpv4Payload::A2 { u } => print!(
+                HyperIpv4Payload::A2 { u } => print!(
                     " udp {}>{} len={} data={}",
                     u.src_port, u.dst_port, u.length, u.payload.len()
                 ),
-                BnfIpv4Payload::A3 { rest } => print!(" data={}", rest.len()),
+                HyperIpv4Payload::A3 { rest } => print!(" data={}", rest.len()),
             }
         }
-        BnfEthernetPayload::A2 { a } => {
+        HyperEthernetPayload::A2 { a } => {
             print!(" arp oper={} spa={:08x} tpa={:08x}", a.oper, a.spa, a.tpa)
         }
-        BnfEthernetPayload::A3 { v6 } => print!(
+        HyperEthernetPayload::A3 { v6 } => print!(
             " ipv6 flow={:05x} next={} hop={} data={}",
             v6.flow_label, v6.next_header, v6.hop_limit, v6.payload.len()
         ),
-        BnfEthernetPayload::A4 { rest } => print!(" raw={}", rest.len()),
+        HyperEthernetPayload::A4 { rest } => print!(" raw={}", rest.len()),
     }
     println!();
 
@@ -65,7 +65,7 @@ fn show(what: &str, b: &[u8]) {
     }
 }
 
-fn bad_emit(what: &str, e: &BnfEthernet) {
+fn bad_emit(what: &str, e: &HyperEthernet) {
     match emit_bytes(e) {
         Ok(out) => println!("{}: written ({} octets)", what, out.len()),
         Err(m) => println!("{}: {}", what, m),
@@ -120,14 +120,14 @@ fn main() {
     let e = parse_bytes(&tcp).unwrap();
     {
         let mut c = e.clone();
-        if let BnfEthernetPayload::A1 { ip } = &mut c.payload {
+        if let HyperEthernetPayload::A1 { ip } = &mut c.payload {
             ip.ihl = 16;
         }
         bad_emit("ihl 16", &c);
     }
     {
         let mut c = e.clone();
-        if let BnfEthernetPayload::A1 { ip } = &mut c.payload {
+        if let HyperEthernetPayload::A1 { ip } = &mut c.payload {
             ip.options = vec![0; 4];
         }
         bad_emit("options longer than ihl says", &c);
@@ -135,10 +135,10 @@ fn main() {
     {
         let mut c = e.clone();
         let a = match parse_bytes(&arp).unwrap().payload {
-            BnfEthernetPayload::A2 { a } => a,
+            HyperEthernetPayload::A2 { a } => a,
             _ => unreachable!(),
         };
-        c.payload = BnfEthernetPayload::A2 { a };
+        c.payload = HyperEthernetPayload::A2 { a };
         bad_emit("arp payload for an ipv4 ethertype", &c);
     }
     {

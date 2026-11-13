@@ -70,7 +70,7 @@ package body HBNF_Shape is
         or else N = "static" or else N = "switch" or else N = "typedef"
         or else N = "volatile" or else N = "while"
       then
-         return N & "_";
+         return HBNF_Grammar.Dialect_Prefix & N;     --  `int` is `hyper_int`
       end if;
       return N;
    end C_Field;

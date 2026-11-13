@@ -133,7 +133,7 @@ package body HBNF_Zig is
 
    function Type_Key (S : String) return String is (Zig_Type (S));
 
-   --  A field name: snake_case, with a "_" suffix if it is a Zig keyword.
+   --  A field name: snake_case, with the dialect prefix if it is a Zig keyword.
    function Zig_Field (S : String) return String is
       N : constant String := Zig_Snake (S);
    begin
@@ -157,7 +157,7 @@ package body HBNF_Zig is
         or else N = "undefined" or else N = "void" or else N = "noreturn"
         or else N = "type" or else N = "anyerror"
       then
-         return N & "_";
+         return HBNF_Grammar.Dialect_Prefix & N;     --  `fn` is `hyper_fn`
       end if;
       return N;
    end Zig_Field;

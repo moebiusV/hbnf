@@ -114,7 +114,7 @@ package body HBNF_Rust is
 
    function Type_Key (S : String) return String is (Rust_Type (S));
 
-   --  A field name: snake_case, with a "_" suffix if it is a Rust keyword.
+   --  A field name: snake_case, with the dialect prefix if it is a Rust keyword.
    function Rust_Field (S : String) return String is
       N : constant String := Rust_Snake (S);
    begin
@@ -135,7 +135,7 @@ package body HBNF_Rust is
         or else N = "priv" or else N = "try" or else N = "typeof"
         or else N = "unsized" or else N = "virtual" or else N = "yield"
       then
-         return N & "_";
+         return HBNF_Grammar.Dialect_Prefix & N;     --  `type` is `hyper_type`
       end if;
       return N;
    end Rust_Field;

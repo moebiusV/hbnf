@@ -16204,41 +16204,144 @@ package body HBNF_Grammar is
       end if;
    end Set_Abnf;
 
+   --  The names of the generated code (CONTEXTS section 31, R678 to R684): every character of a rule name that is not a letter, a digit,
+   --  `_` or `-` becomes `_` (a run of them one `_`; a hyphen is a `_` in every backend already), and a name that needed that, or that is the
+   --  same as another when both are folded to one case (the output languages differ in what they fold, and a `_` is dropped by some), gets a global counter as its suffix, in the
+   --  order the names first appear: `_1` for the first such name, `_100` for the hundredth.  Then the prefix (`hyper_`) is put on.
+   package Mangle_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+     (Key_Type => String, Element_Type => String, Hash => Ada.Strings.Hash, Equivalent_Keys => "=");
+   Mangled_Names : Mangle_Maps.Map;
+
+   --  A name that needs no counter: letters, digits, `_` and `-` (R684: a hyphen is a plain `_` in the generated code, as it was, so the
+   --  native code of a grammar that names `quoted_key` for the rule `quoted-key` goes on working)
+   function Is_Plain_Name (S : String) return Boolean is
+     (S'Length > 0 and then S (S'First) not in '0' .. '9' | '-'
+      and then (for all C of S => C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-'));
+
+   --  S with each run of characters that are not letters, digits or `_` made one `_`
+   function Clean_Name (S : String) return String is
+      Buf : Unbounded_String;
+      Odd : Boolean := False;
+   begin
+      for C of S loop
+         if C in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' then
+            Append (Buf, C);
+            Odd := False;
+         elsif not Odd then
+            Append (Buf, '_');
+            Odd := True;
+         end if;
+      end loop;
+      declare
+         R : constant String := To_String (Buf);
+      begin
+         if R'Length = 0 or else R (R'First) in '0' .. '9' then
+            return "n_" & R;
+         end if;
+         return R;
+      end;
+   end Clean_Name;
+
+   --  the spelling two names must not share: letters folded to one case and `_` dropped
+   function Fold_Key (S : String) return String is
+      Buf : Unbounded_String;
+   begin
+      for C of S loop
+         if C /= '_' then
+            Append (Buf, Ada.Characters.Handling.To_Lower (C));
+         end if;
+      end loop;
+      return To_String (Buf);
+   end Fold_Key;
+
    procedure Note_Rule_Names (Rules : Rule_Vectors.Vector) is
+      package Count_Maps is new Ada.Containers.Indefinite_Hashed_Maps
+        (Key_Type => String, Element_Type => Natural, Hash => Ada.Strings.Hash, Equivalent_Keys => "=");
+      Folds : Count_Maps.Map;
+      Used  : Path_Sets.Set;
+      Next  : Natural := 1;
    begin
       Emitted_Rules.Clear;
+      Mangled_Names.Clear;
       for R of Rules loop
          Emitted_Rules.Include (To_String (R.Name));
       end loop;
+      --  how many names share each folded spelling
+      for N of Emitted_Rules loop
+         if not Is_Core_Name (N) and then N /= "ws" then
+            declare
+               K : constant String := Fold_Key (Clean_Name (N));
+            begin
+               Folds.Include (K, (if Folds.Contains (K) then Folds.Element (K) + 1 else 1));
+               if Is_Plain_Name (N) then
+                  Used.Include (N);
+               end if;
+            end;
+         end if;
+      end loop;
+      for R of Rules loop
+         declare
+            N : constant String := To_String (R.Name);
+         begin
+            if not Is_Core_Name (N) and then N /= "ws" and then not Mangled_Names.Contains (N)
+              and then (not Is_Plain_Name (N) or else Folds.Element (Fold_Key (Clean_Name (N))) > 1)
+            then
+               loop
+                  declare
+                     M : constant String := Clean_Name (N) & "_" & Ada.Strings.Fixed.Trim (Natural'Image (Next), Ada.Strings.Both);
+                  begin
+                     Next := Next + 1;
+                     if not Used.Contains (M) and then not Folds.Contains (Fold_Key (M)) then
+                        Mangled_Names.Include (N, M);
+                        Used.Include (M);
+                        exit;
+                     end if;
+                  end;
+               end loop;
+            end if;
+         end;
+      end loop;
    end Note_Rule_Names;
 
+   --  The generated spelling of rule name S before the language's own conventions (case, `_`) and before the prefix
+   function Mangled (S : String) return String is
+     (if Mangled_Names.Contains (S) then Mangled_Names.Element (S) else S);
+
+   --  `hyper_` is the prefix of hbnf's own dialect (HyperBNF); the other notations keep the prefix of their name, as they had:
+   --  `bnf_`, `ebnf_`, `abnf_`, `ybnf_`.  A grammar that names no dialect is HyperBNF.
+   function Dialect_Prefix return String is
+      D : constant String :=
+        (if Flag_Dialect /= Null_Unbounded_String then To_String (Flag_Dialect)
+         elsif File_Dialect /= Null_Unbounded_String then To_String (File_Dialect)
+         else "hbnf");
+   begin
+      return (if D = "hbnf" then "hyper_" else D & "_");
+   end Dialect_Prefix;
+
    function Prefixed (S : String) return String is
-      D : constant Unbounded_String :=
-        (if Flag_Dialect /= Null_Unbounded_String then Flag_Dialect
-         elsif File_Dialect /= Null_Unbounded_String then File_Dialect
-         else To_Unbounded_String ("bnf"));
+      M : constant String := Mangled (S);
    begin
       if No_Name_Prefix or else Flag_No_Prefix
         or else Is_Core_Name (S) or else S = "ws"
         or else not Emitted_Rules.Contains (S)
       then
-         return S;
+         return M;
       end if;
-      return To_String (D) & "_" & S;
+      --  a grammar's own `prefix "x_"` replaces the prefix (the emitters put it on the types), and `prefix none` takes it off
+      if Type_Prefix_Code /= Null_Unbounded_String then
+         return M;
+      end if;
+      return Dialect_Prefix & M;
    end Prefixed;
 
    function Name_Prefix return String is
-      D : constant Unbounded_String :=
-        (if Flag_Dialect /= Null_Unbounded_String then Flag_Dialect
-         elsif File_Dialect /= Null_Unbounded_String then File_Dialect
-         else To_Unbounded_String ("bnf"));
    begin
       if No_Name_Prefix or else Flag_No_Prefix then
          return "";
       elsif Type_Prefix_Code /= Null_Unbounded_String then
          return To_String (Type_Prefix_Code);
       end if;
-      return To_String (D) & "_";
+      return Dialect_Prefix;
    end Name_Prefix;
 
    procedure Set_Root (Name : String) is

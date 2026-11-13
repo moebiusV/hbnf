@@ -93,8 +93,8 @@ procedure Print_Main is
          end loop;
          Append (Out_Text, " {" & NL);
          for El of E.Block.Block_2 loop
-            if El.Entry_F /= null then
-               Put_Entry (El.Entry_F.all, Indent + 4, Out_Text);
+            if El.hyper_Entry /= null then
+               Put_Entry (El.hyper_Entry.all, Indent + 4, Out_Text);
             end if;
          end loop;
          Append (Out_Text, Pad & "}" & NL);
@@ -111,8 +111,8 @@ procedure Print_Main is
       R : Unbounded_String;
    begin
       for El of C loop
-         if El.Entry_F /= null then
-            Put_Entry (El.Entry_F.all, 0, R);
+         if El.hyper_Entry /= null then
+            Put_Entry (El.hyper_Entry.all, 0, R);
          end if;
       end loop;
       return To_String (R);

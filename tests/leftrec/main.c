@@ -5,9 +5,9 @@ static long long fold(const struct sum_list *h) {
     long long acc = 0;
     for (e = h->head; e; e = e->_link)
         switch (e->kind) {
-        case SUM_BASE: acc = e->int_; break;    /* the first entry */
-        case SUM_OP1:  acc += e->int_; break;   /* + */
-        case SUM_OP2:  acc -= e->int_; break;   /* - */
+        case SUM_BASE: acc = e->hyper_int; break;    /* the first entry */
+        case SUM_OP1:  acc += e->hyper_int; break;   /* + */
+        case SUM_OP2:  acc -= e->hyper_int; break;   /* - */
         }
     return acc;
 }
@@ -29,7 +29,7 @@ static void show(const entry_t *n, int big) {
         for (s = n->sum.head; s; s = s->_link, k++)
             if (!big)
                 printf("%s%lld", s->kind == SUM_BASE ? " "
-                    : s->kind == SUM_OP1 ? " + " : " - ", s->int_);
+                    : s->kind == SUM_OP1 ? " + " : " - ", s->hyper_int);
         if (big)
             printf(" (%zu terms)", k);
         printf(" = %lld", fold(&n->sum));

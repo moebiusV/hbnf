@@ -29,7 +29,7 @@ procedure Mixed_Main is
       Out_R : Msg_Type;
    begin
       Out_R := Parse_Text (Text);
-      Put_Line (What & ": len=" & Img (Long_Long_Integer (Out_R.Frame.Len)) & " body=" & Str (Out_R.Frame.Body_F));
+      Put_Line (What & ": len=" & Img (Long_Long_Integer (Out_R.Frame.Len)) & " body=" & Str (Out_R.Frame.hyper_Body));
    exception
       when E : Parse_Error =>
          Put_Line (What & ": error" & LF & Ada.Exceptions.Exception_Message (E));

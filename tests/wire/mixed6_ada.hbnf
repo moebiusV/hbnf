@@ -8,7 +8,7 @@ doc = "PKT:" frame ";"
 
 frame = len:8 body:[len] tag
   %emit{
-      N.Len := Unsigned_8 (N.Body_F.Length);
+      N.Len := Unsigned_8 (N.hyper_Body.Length);
   }
 
 tag = 1*ALPHA

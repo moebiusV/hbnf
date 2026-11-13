@@ -42,11 +42,11 @@ int main(int argc, char **argv) {
         printf("; calc");
         for (s = c.sum.head; s; s = s->_link) {
             if (s == c.sum.head) {          /* the base */
-                acc = s->int_;
-                printf(" %lld", s->int_);
+                acc = s->hyper_int;
+                printf(" %lld", s->hyper_int);
             } else {
-                acc += s->op == OP_OP1 ? s->int_ : -s->int_;
-                printf(" %s %lld", s->op == OP_OP1 ? "+" : "-", s->int_);
+                acc += s->op == OP_OP1 ? s->hyper_int : -s->hyper_int;
+                printf(" %s %lld", s->op == OP_OP1 ? "+" : "-", s->hyper_int);
             }
         }
         printf(" = %lld%s; modes", acc, c.loud.head ? " loudly" : "");

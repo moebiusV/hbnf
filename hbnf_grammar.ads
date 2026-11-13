@@ -77,6 +77,9 @@ package HBNF_Grammar is
    --  The exception `X = A - B` (ISO 14977's): X matches what A matches unless
    --  B matches exactly the same text.  A and B are rules of characters.
    function Prefixed (S : String) return String;
+   --  The prefix of the grammar's dialect: `hyper_` for HyperBNF, `bnf_`, `ebnf_`, `abnf_`, `ybnf_` for the others.  A field that is a reserved word
+   --  of the output language gets it (R682, R683), whatever `prefix` says about the types.
+   function Dialect_Prefix return String;
    --  The name of a generated identifier built from the rule S: the dialect
    --  the file names (`dialect ybnf`, `--abnf`, ...) and an underscore in
    --  front (`ybnf_if`), so no rule is ever a reserved word of the language

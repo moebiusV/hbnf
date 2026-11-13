@@ -29,7 +29,7 @@ procedure Mixed2_Main is
       Out_R : Doc_Type;
    begin
       Out_R := Parse_Text (Text);
-      Put_Line (What & ": kind=" & Img (Long_Long_Integer (Out_R.Record_F.Kind)) & " label=" & To_String (Out_R.Record_F.Label));
+      Put_Line (What & ": kind=" & Img (Long_Long_Integer (Out_R.hyper_Record.Kind)) & " label=" & To_String (Out_R.hyper_Record.Label));
    exception
       when E : Parse_Error =>
          Put_Line (What & ": error" & LF & Ada.Exceptions.Exception_Message (E));

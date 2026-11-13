@@ -99,13 +99,14 @@ if command -v rustc > /dev/null 2>&1; then
 	[ "$("$W/rl/m" "$W/rl/in.txt" 2>&1 | cut -d' ' -f1)" = ok ] \
 		|| { echo "lexer: FAIL (look-ws: Rust does not stop a list at the word the lookahead names)"; fail=1; }
 fi
-# two rules that become one identifier are refused, naming both (R636: the mangling of names), in each backend
+# two rules that become one identifier are two rules, each with a counter (R681: the global counter replaces the refusal of R636), in
+# each backend: `and-like-this` and `and_like_this` are `and_like_this_1` and `and_like_this_2`
 for be in c rust zig ada; do
-	"$CLI" tests/lexer/name-collision.hbnf --backend=$be --package=Tn > /dev/null 2> "$W/err" \
-		&& { echo "lexer: FAIL (name-collision, $be: generated, should be refused)"; fail=1; continue; }
-	grep -q 'rules `and-like-this` and `and_like_this` both become' "$W/err" \
-		|| { echo "lexer: FAIL (name-collision, $be: the message does not name both rules: $(head -c 200 "$W/err"))"; fail=1; }
+	"$CLI" tests/lexer/name-collision.hbnf --backend=$be --package=Tn > "$W/nc.$be" 2> "$W/err" \
+		|| { echo "lexer: FAIL (name-collision, $be: not generated: $(head -c 200 "$W/err"))"; fail=1; continue; }
 done
+grep -q 'and_like_this_1' "$W/nc.c" && grep -q 'and_like_this_2' "$W/nc.c" \
+	|| { echo "lexer: FAIL (name-collision, c: the two rules are not and_like_this_1 and and_like_this_2)"; fail=1; }
 # a hyperrule in an island's guest (item 27)
 "$CLI" tests/lexer/island-host.hbnf --backend=c > "$W/i.c" 2> "$W/err" || { echo "lexer: FAIL (island-host.hbnf: $(head -c 300 "$W/err"))"; exit 1; }
 root=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/i.c")

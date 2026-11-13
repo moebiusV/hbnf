@@ -277,9 +277,9 @@ segment = *pchar
 pchar = ALPHA / DIGIT / "-" / "." / "_" / "~"
 G
 if "$CLI" "$W/tk.hbnf" --backend=c > "$W/tk.c" 2> "$W/err.txt" \
-   && grep -Eq 'typedef (const char \*|hbnf_str) bnf_scheme_t;' "$W/tk.c" \
-   && grep -Eq 'typedef (const char \*|hbnf_str) bnf_path_t;' "$W/tk.c" \
-   && ! grep -q 'struct bnf_path_list' "$W/tk.c"; then
+   && grep -Eq 'typedef (const char \*|hbnf_str) hyper_scheme_t;' "$W/tk.c" \
+   && grep -Eq 'typedef (const char \*|hbnf_str) hyper_path_t;' "$W/tk.c" \
+   && ! grep -q 'struct hyper_path_list' "$W/tk.c"; then
 	echo "  PASS [scheme and path are strings, not lists of nodes]"
 else
 	echo "  FAIL [scheme and path are strings, not lists of nodes]: $(head -1 "$W/err.txt")"; rc=1
@@ -294,7 +294,7 @@ item = ALPHA "-" ALPHA
 ws = 1*( 0x20 )
 G
 if "$CLI" "$W/tk2.hbnf" --backend=c > "$W/tk2.c" 2> "$W/err.txt" \
-   && grep -q 'struct bnf_items_list' "$W/tk2.c"; then
+   && grep -q 'struct hyper_items_list' "$W/tk2.c"; then
 	echo "  PASS [a rule that skips whitespace between entries stays a list]"
 else
 	echo "  FAIL [a rule that skips whitespace between entries stays a list]: $(head -1 "$W/err.txt")"; rc=1

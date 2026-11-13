@@ -67,7 +67,7 @@ procedure Net_Main is
    end Same;
 
    procedure Show (What : String; B : Byte_Array) is
-      E   : Bnf_Ethernet_T;
+      E   : Hyper_Ethernet_T;
       Ok  : Boolean;
       Err : Parse_Error;
    begin
@@ -82,7 +82,7 @@ procedure Net_Main is
       case E.Payload.Alt is
          when 1 =>
             declare
-               Ip : constant Bnf_Ipv4_T := E.Payload.Ip;
+               Ip : constant Hyper_Ipv4_T := E.Payload.Ip;
             begin
                Put (" ipv4 ihl=" & Img (Long_Long_Integer (Ip.Ihl))
                     & " len=" & Img (Long_Long_Integer (Ip.Total_Length))
@@ -140,7 +140,7 @@ procedure Net_Main is
       end;
    end Show;
 
-   procedure Bad_Emit (What : String; E : Bnf_Ethernet_T) is
+   procedure Bad_Emit (What : String; E : Hyper_Ethernet_T) is
       Out_B : Octets;
       Ok    : Boolean;
       Msg   : Unbounded_String;
@@ -173,7 +173,7 @@ procedure Net_Main is
           & X ("20010db8000000000000000000000002") & T ("abcd"));
    Other : constant Byte_Array := Eth (X ("88cc0102"));   --  LLDP: not listed
 
-   E  : Bnf_Ethernet_T;
+   E  : Hyper_Ethernet_T;
    Ok : Boolean;
    Er : Parse_Error;
 begin
@@ -187,27 +187,27 @@ begin
 
    Parse_Bytes (Tcp, E, Ok, Er);
    declare
-      C : Bnf_Ethernet_T := E;
+      C : Hyper_Ethernet_T := E;
    begin
       C.Payload.Ip.Ihl := 16;
       Bad_Emit ("ihl 16", C);
    end;
    declare
-      C : Bnf_Ethernet_T := E;
+      C : Hyper_Ethernet_T := E;
    begin
       C.Payload.Ip.Options := Octet_Vectors.To_Vector (0, 4);
       Bad_Emit ("options longer than ihl says", C);
    end;
    declare
-      C  : Bnf_Ethernet_T := E;
-      AE : Bnf_Ethernet_T;
+      C  : Hyper_Ethernet_T := E;
+      AE : Hyper_Ethernet_T;
    begin
       Parse_Bytes (Arp, AE, Ok, Er);
       C.Payload := (Alt => 2, A => AE.Payload.A);
       Bad_Emit ("arp payload for an ipv4 ethertype", C);
    end;
    declare
-      C : Bnf_Ethernet_T := E;
+      C : Hyper_Ethernet_T := E;
    begin
       C.Ethertype := 16#1234#;
       Bad_Emit ("ethertype not in the list", C);

@@ -28,7 +28,7 @@ procedure Mixed6_Main is
 begin
    F.Len := 99;                       --  %emit replaces it
    for C of String'("hello") loop
-      F.Body_F.Append (Unsigned_8 (Character'Pos (C)));
+      F.hyper_Body.Append (Unsigned_8 (Character'Pos (C)));
    end loop;
    F.Tag := To_Unbounded_String ("ab");
    Emit_Bits_Frame (F, Bytes, Nbits, Ok, Msg);

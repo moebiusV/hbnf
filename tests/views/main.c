@@ -14,7 +14,7 @@ static void check(const char *what, hbnf_str v, const char *want, size_t n, int 
 
 int main(void) {
     char err[256]; size_t line, col;
-    bnf_doc_t d;
+    hyper_doc_t d;
     const char *t1 = "key \"plain\"";
     const char *t2 = "key \"a\\\"b\"";
     size_t big = 70000;

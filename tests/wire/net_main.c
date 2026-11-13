@@ -2,7 +2,7 @@
 #include "net.c"
 
 static void show(const char *what, const uint8_t *b, size_t n) {
-    bnf_ethernet_t e;
+    hyper_ethernet_t e;
     char err[256];
     size_t at = 0;
     if (!parse_bytes(b, n, &e, err, sizeof err, &at)) {
@@ -11,7 +11,7 @@ static void show(const char *what, const uint8_t *b, size_t n) {
     }
     printf("%s: ethertype=%04x kind=%d", what, (unsigned)e.ethertype, e.payload.kind);
     if (e.payload.kind == 1) {
-        bnf_ipv4_t *ip = &e.payload.u.a1.ip;
+        hyper_ipv4_t *ip = &e.payload.u.a1.ip;
         printf(" ipv4 ihl=%u len=%u ttl=%u proto=%u src=%08x dst=%08x opts=%zu",
                ip->ihl, ip->total_length, ip->ttl, ip->protocol, ip->src,
                ip->dst, ip->options.len);
@@ -50,7 +50,7 @@ static void show(const char *what, const uint8_t *b, size_t n) {
     free_arena();
 }
 
-static void bad_emit(const char *what, bnf_ethernet_t *e) {
+static void bad_emit(const char *what, hyper_ethernet_t *e) {
     uint8_t out[256];
     char err[256];
     size_t m = 0;
@@ -97,27 +97,27 @@ int main(void) {
     show("short", ip, 10);
 
     {
-        bnf_ethernet_t e;
+        hyper_ethernet_t e;
         char err[64];
         size_t at;
         parse_bytes(tcp, sizeof tcp - 1, &e, err, sizeof err, &at);
         {
-            bnf_ethernet_t c = e;
+            hyper_ethernet_t c = e;
             c.payload.u.a1.ip.ihl = 16;
             bad_emit("ihl 16", &c);
         }
         {
-            bnf_ethernet_t c = e;
+            hyper_ethernet_t c = e;
             c.payload.u.a1.ip.options.len = 4;
             bad_emit("options longer than ihl says", &c);
         }
         {
-            bnf_ethernet_t c = e;
+            hyper_ethernet_t c = e;
             c.payload.kind = 2;
             bad_emit("arp payload for an ipv4 ethertype", &c);
         }
         {
-            bnf_ethernet_t c = e;
+            hyper_ethernet_t c = e;
             c.ethertype = 0x1234;
             bad_emit("ethertype not in the list", &c);
         }

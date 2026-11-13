@@ -2,6 +2,7 @@ pragma Ada_2022;
 
 with Ada.Characters.Handling;
 with HBNF_Ada;
+with HBNF_Grammar;
 with Ada.Containers.Vectors;
 
 package body HBNF_Wire.Ada_Lang is
@@ -279,7 +280,7 @@ package body HBNF_Wire.Ada_Lang is
       function Comp (Field : String) return String is
          C : constant String := Ada_Case (Field);
       begin
-         return (if Is_Reserved (C) then C & "_F" else C);
+         return (if Is_Reserved (C) then HBNF_Grammar.Dialect_Prefix & C else C);
       end Comp;
 
       function Def_Field (Field : String) return String is

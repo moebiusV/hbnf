@@ -14,7 +14,7 @@ int main(void) {
         "\x1f\x90\x00\x50\x00\x00\x00\x01\x00\x00\x00\x00\x50\x02\x20\x00"
         "\x00\x00\x00\x00"
         "ping";
-    bnf_ethernet_t e;
+    hyper_ethernet_t e;
     char err[64];
     size_t at;
     parse_bytes(tcp, sizeof tcp - 1, &e, err, sizeof err, &at);

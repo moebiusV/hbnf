@@ -24,13 +24,13 @@ done
 # a hidden rule that repeats or is optional is hidden too: the tree has no field for it
 "$CLI" tests/hidden/repeat.hbnf --backend=c > "$W/repeat.c" 2> "$W/repeat.err" \
 	|| { echo "hidden: FAIL (repeat: $(head -c 200 "$W/repeat.err"))"; fail=1; }
-sed -n '/^struct bnf_doc_s {/,/^};/p' "$W/repeat.c" | grep -c 'bnf_doc_[12]' | grep -q '^0$' \
+sed -n '/^struct hyper_doc_s {/,/^};/p' "$W/repeat.c" | grep -c 'hyper_doc_[12]' | grep -q '^0$' \
 	|| { echo "hidden: FAIL (repeat: a repeated hidden rule is still a field)"; fail=1; }
 # the other backends keep no field for it either
 for be in rust zig ada; do
 	"$CLI" tests/hidden/decl.hbnf --backend=$be > "$W/decl.$be" 2> "$W/decl.$be.err" \
 		|| { echo "hidden: FAIL (decl, $be: $(head -c 200 "$W/decl.$be.err"))"; fail=1; continue; }
-	grep -Eiq '^ +(pub )?bnf_dash *: *bnf_?dash' "$W/decl.$be" \
+	grep -Eiq '^ +(pub )?hyper_dash *: *bnf_?dash' "$W/decl.$be" \
 		&& { echo "hidden: FAIL (decl, $be: the hidden rule is still a field of the tree)"; fail=1; }
 done
 # a hidden rule that builds structure (item 4): read into a scratch value, no field in the tree, the text still has to match

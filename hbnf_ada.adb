@@ -76,7 +76,7 @@ package body HBNF_Ada is
 
    function Type_Key (S : String) return String is (Ada_Ident (S));
 
-   --  A record component name: Ada_Ident, with a "_F" suffix if the bare
+   --  A record component name: Ada_Ident, with the dialect prefix if the bare
    --  identifier is an Ada reserved word (e.g. the rule `entry`).
    function Ada_Field (S : String) return String is
       N : constant String := Ada_Ident (S);
@@ -108,7 +108,7 @@ package body HBNF_Ada is
         or else N = "With" or else N = "Xor";
    begin
       if Reserved then
-         return N & "_F";
+         return HBNF_Grammar.Dialect_Prefix & N;     --  `entry` is `hyper_entry`
       end if;
       return N;
    end Ada_Field;
