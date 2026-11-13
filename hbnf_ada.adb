@@ -2058,7 +2058,7 @@ package body HBNF_Ada is
          Tree_Here : constant Boolean := Ends_Tree (Els, First, Last);
          Wrapped : constant Boolean := Tree_Here or else
            (for some K in First .. Last =>
-              Els (K).Kind = Block and then Els (K).Op in B_As | B_Num | B_Both | B_Test | B_Not_Test | B_Scope | B_Reread);
+              Els (K).Kind = Block and then Els (K).Op in B_As | B_Num | B_Both | B_Test | B_Not_Test | B_Scope | B_Reread | B_Where | B_Bind_Code);
          Ovr_Was : constant Natural := Ovr_N;
          Skip_To : Natural := 0;     --  the members of an `all of ( ... )` that its marker has written
          --  the number of the sequence that declared the tag, when a rewrite above it reads it
@@ -2183,7 +2183,7 @@ package body HBNF_Ada is
             return To_String (R);
          end Tmpl_Ada;
          function Is_Op (J : Natural) return Boolean is
-           (Els (J).Kind = Block and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both);
+           (Els (J).Kind = Block and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both | B_Where | B_Bind_Code);
          function Base_Of (K : Natural) return Natural is
             J : Natural := K - 1;
          begin
@@ -2314,7 +2314,7 @@ package body HBNF_Ada is
                      Append (Buf, Ind & "   Es_" & Sid & "_" & Img (Base_Of (K)) & " : Natural := 1;");
                      Append (Buf, LF);
                   end if;
-               elsif Els (K).Kind = Block and then Els (K).Op in B_Num | B_Both | B_Test | B_Not_Test then
+               elsif Els (K).Kind = Block and then Els (K).Op in B_Num | B_Both | B_Test | B_Not_Test | B_Where | B_Bind_Code then
                   if not Is_Op (K - 1) then
                      Append (Buf, Ind & "   Es_" & Sid & "_" & Img (Base_Of (K)) & " : Natural := 1;");
                      Append (Buf, LF);
@@ -2458,7 +2458,7 @@ package body HBNF_Ada is
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_As | B_Num | B_Both | B_Test | B_Not_Test
+                 and then Els (K + 1).Op in B_As | B_Num | B_Both | B_Test | B_Not_Test | B_Where | B_Bind_Code
                  and then not Is_Op (K)
                then
                   Append (Buf, Ind & "Es_" & Sid & "_" & Img (K) & " := P.Pos;");
@@ -2764,6 +2764,50 @@ package body HBNF_Ada is
                           & Ctx_Const (To_String (E.Ctx)) & ", P.Text (St .. Kq - 1)) then P.Pos := St; Fail (P, ""a name "
                           & (if E.Op = B_Test then "in `" else "not in `") & Ada_Escape (To_String (E.Ctx)) & "`""); "
                           & To_String (FA) & " end if; end;");
+                        Append (Buf, LF);
+                     elsif E.Op in B_Where | B_Bind_Code then
+                        --  the author's Ada, over the text of the element before (as C's is): `P` the parser, `Text` what that
+                        --  element matched, `Len` its length, and the node being made is in scope.  The code is the body of a
+                        --  function (`%where`, giving a Boolean; false fails the alternative) or a procedure (`%bind { }`):
+                        --  its declarations, `begin` and statements, as a scanner's are.
+                        Append (Buf, Ind & "declare Kq : constant Natural := P.Pos; St : Natural := Es_" & Sid & "_"
+                          & Img (Base_Of (K)) & "; begin"
+                          & (if Skips then " P.Pos := St; Skip_Ws (P); St := P.Pos;" else "") & " P.Pos := Kq;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "   declare");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      Text : constant String := P.Text (St .. Kq - 1);");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      Len  : constant Natural := Text'Length;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "      pragma Unreferenced (Text, Len);");
+                        Append (Buf, LF);
+                        if E.Op = B_Where then
+                           Append (Buf, Ind & "      function Where_Fn return Boolean is");
+                           Append (Buf, LF);
+                           Append (Buf, To_String (E.Code));
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      end Where_Fn;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   begin");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      if not Where_Fn then P.Pos := St; Fail (P, ""a valid "
+                             & Ada_Escape (To_String (Rules (Owner).Name)) & """); " & To_String (FA) & " end if;");
+                        else
+                           Append (Buf, Ind & "      procedure Bind_Proc is");
+                           Append (Buf, LF);
+                           Append (Buf, To_String (E.Code));
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      end Bind_Proc;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   begin");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "      Bind_Proc;");
+                        end if;
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "   end;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "end;");
                         Append (Buf, LF);
                      elsif E.Op = B_Bind then
                         --  `%bind set field`: the text of the field just read goes into the set

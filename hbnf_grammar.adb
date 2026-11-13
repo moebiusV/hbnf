@@ -13542,6 +13542,9 @@ package body HBNF_Grammar is
                     (Ada.Characters.Handling.To_Lower
                        (To_String (Cur (P).Text)));
                   Next (P);
+               elsif To_String (File_Lang) in "Rust" | "Zig" | "Ada" and then Cur (P).Kind = T_Code then
+                  --  untagged code is in the language the file says, and goes to that backend's layout (a file of C code is C's)
+                  Tag := To_Unbounded_String (Ada.Characters.Handling.To_Lower (To_String (File_Lang)));
                end if;
                Jet_Tag := Tag;
             end;

@@ -1305,22 +1305,14 @@ package body HBNF_Compilable is
                   Rolled => HBNF_Grammar.Rollback_State /= "" and then HBNF_Grammar.Runs_Emits (Rules (I)));
          end if;
       end loop;
-      --  every emit is safe.  The code of an %emit is the grammar's own, in the language its file says (C if it has none), so it
-      --  goes to the backend of that language; Ada generates it so far, Rust and Zig say so by rule name
+      --  every emit is safe.  The code of an %emit goes out as it is written: the `language` line picks the layout and the template,
+      --  and code of another language than the backend's is the author's to get right
       for I in 1 .. N loop
          if Has_Direct (Rules (I).Pattern) then
             if Backend not in "c" | "ada" | "zig" | "rust" then
                raise Parse_Error with
                  "rule `" & To_String (Rules (I).Name) & "` has an %emit, which only the C, Ada, Zig and Rust "
                  & "backends generate so far";
-            elsif HBNF_Grammar.Language /= (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C") then
-               raise Parse_Error with
-                 "rule `" & To_String (Rules (I).Name) & "` has an %emit, which is code written in "
-                 & HBNF_Grammar.Language & " (the file's `language` line, C if it has none), so it can be emitted in "
-                 & HBNF_Grammar.Language & ", not in " & (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C")
-                 & ".  For " & (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C") & ", write the same code in "
-                 & (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C") & " in a file that says `language "
-                 & (if Backend = "ada" then "Ada" elsif Backend = "zig" then "Zig" elsif Backend = "rust" then "Rust" else "C") & "`";
             end if;
          end if;
       end loop;
@@ -1499,6 +1491,113 @@ package body HBNF_Compilable is
       end loop;
    end Check_Names;
 
+   --  Which language a block of native code looks written in: "C", "Rust", "Zig" or "Ada", or "" when it is too short or too mixed to
+   --  say.  Each marker is a thing only that language has (Rust's `let mut`, Zig's `@intCast`, Ada's `:=`, C's `NULL` and `->` with
+   --  `size_t`), and a language needs two points and two more than any other: a guess made to warn, never to refuse.
+   function Guess_Language (Code : String) return String is
+      Scores : array (1 .. 4) of Natural := (others => 0);   --  C, Rust, Zig, Ada
+      Names  : constant array (1 .. 4) of access constant String :=
+        (new String'("C"), new String'("Rust"), new String'("Zig"), new String'("Ada"));
+
+      procedure Mark (Lang : Positive; Marker : String; Points : Natural := 1) is
+      begin
+         if Ada.Strings.Fixed.Index (Code, Marker) > 0 then
+            Scores (Lang) := Scores (Lang) + Points;
+         end if;
+      end Mark;
+
+      Best, Second : Natural := 0;
+      Pick : Natural := 0;
+   begin
+      Mark (1, "NULL"); Mark (1, "size_t"); Mark (1, "strlen"); Mark (1, "memcmp"); Mark (1, "memcpy"); Mark (1, "(void)");
+      Mark (1, "sizeof"); Mark (1, "#include"); Mark (1, "unsigned "); Mark (1, "static int "); Mark (1, "static void ");
+      Mark (1, "int "); Mark (1, "char *"); Mark (1, "const char");
+      Mark (2, "let mut ", 2); Mark (2, "&mut "); Mark (2, "fn "); Mark (2, "unsafe "); Mark (2, "as usize"); Mark (2, "as i32");
+      Mark (2, "as u8"); Mark (2, ".len()"); Mark (2, "Some("); Mark (2, "println!"); Mark (2, "impl "); Mark (2, "&str");
+      Mark (3, "@intCast", 2); Mark (3, "@as("); Mark (3, "orelse"); Mark (3, "[]const u8", 2); Mark (3, ": usize"); Mark (3, "std.");
+      Mark (3, "try "); Mark (3, "catch "); Mark (3, "pub fn "); Mark (3, ".len;"); Mark (3, "@");
+      Mark (4, ":=", 2); Mark (4, "begin"); Mark (4, "end;"); Mark (4, " then"); Mark (4, " /= "); Mark (4, "'Length"); Mark (4, "elsif");
+      Mark (4, "Natural"); Mark (4, "Boolean"); Mark (4, "and then"); Mark (4, "or else"); Mark (4, "procedure "); Mark (4, "'Image");
+      for I in Scores'Range loop
+         if Scores (I) > Best then
+            Second := Best; Best := Scores (I); Pick := I;
+         elsif Scores (I) > Second then
+            Second := Scores (I);
+         end if;
+      end loop;
+      if Best >= 2 and then Best >= Second + 2 then
+         return Names (Pick).all;
+      end if;
+      return "";
+   end Guess_Language;
+
+   --  The reader finds the end of a block of code by the rules of the language the file says, so a block that looks written in
+   --  another is likely a mistake the compiler of the generated file would only report later: say so, once per rule.  The code is
+   --  generated as it is written all the same.
+   procedure Check_Code_Language (Rules : HBNF_Grammar.Rule_Vectors.Vector) is
+      File : constant String := HBNF_Grammar.Language;
+
+      procedure Look (Rule, What, Code, Expect : String) is
+         Got : constant String := Guess_Language (Code);
+      begin
+         if Got /= "" and then Got /= Expect then
+            HBNF_Grammar.Warn
+              (Rule, What & " looks like " & Got & ", and is generated as it is written, but the "
+               & (if Expect = File then "file says `language " & File & "`" else "block is for " & Expect)
+               & ": the layout is " & Expect & "'s, and the compiler of the generated file will say what does not fit");
+         end if;
+      end Look;
+
+      procedure Walk (Rule : String; V : HBNF_Grammar.Element_Vectors.Vector) is
+      begin
+         for E of V loop
+            if E.Kind = HBNF_Grammar.Block
+              and then E.Op in HBNF_Grammar.B_Emit | HBNF_Grammar.B_Where | HBNF_Grammar.B_Bind_Code
+            then
+               Look (Rule, (case E.Op is when HBNF_Grammar.B_Emit => "an %emit", when HBNF_Grammar.B_Where => "a %where",
+                            when others => "a %bind { }"), To_String (E.Code), File);
+            elsif E.Kind = HBNF_Grammar.Group then
+               Walk (Rule, E.Items);
+            end if;
+         end loop;
+      end Walk;
+   begin
+      for R of Rules loop
+         declare
+            NM : constant String := To_String (R.Name);
+         begin
+            Walk (NM, R.Pattern);
+            if R.Action_Code /= Null_Unbounded_String then
+               Look (NM, "an %action", To_String (R.Action_Code), File);
+            end if;
+            if NM not in "word" | "int" | "str" | "ws" then
+               if R.Jet_Code /= Null_Unbounded_String and then To_String (R.Jet_Code) /= HBNF_Grammar.No_C_Code then
+                  Look (NM, "the scanner", To_String (R.Jet_Code), "C");
+               end if;
+               Look (NM, "the Rust scanner", HBNF_Grammar.Jet_Body (NM, HBNF_Grammar.Rust_Target), "Rust");
+               Look (NM, "the Zig scanner", HBNF_Grammar.Jet_Body (NM, HBNF_Grammar.Zig_Target), "Zig");
+               Look (NM, "the Ada scanner", HBNF_Grammar.Jet_Body (NM, HBNF_Grammar.Ada_Target), "Ada");
+            end if;
+         end;
+      end loop;
+   end Check_Code_Language;
+
+   --  `%action { }` on a rule runs over the tree after the text is read: only the C backend has that pass so far, and the others say so
+   --  by rule name.  (`%where { }` and `%bind { }` are generated by all four, and every code block goes out as it is written: the
+   --  `language` line picks the layout and the template, and code of another language than the backend's is the author's to get right.)
+   procedure Check_Native_Code (Rules : HBNF_Grammar.Rule_Vectors.Vector; Backend : String) is
+   begin
+      if Backend not in "rust" | "zig" | "ada" then
+         return;
+      end if;
+      for R of Rules loop
+         if R.Action_Code /= Null_Unbounded_String then
+            raise Parse_Error with
+              "rule `" & To_String (R.Name) & "` has an `%action { }`, which only the C backend generates so far";
+         end if;
+      end loop;
+   end Check_Native_Code;
+
    procedure Check
      (Rules   : HBNF_Grammar.Rule_Vectors.Vector;
       Backend : String) is
@@ -1511,6 +1610,8 @@ package body HBNF_Compilable is
       Check_Col_Tests (Rules, Backend);
       Check_Intersections (Rules, Backend);
       Check_Emits (Rules, Backend);
+      Check_Native_Code (Rules, Backend);
+      Check_Code_Language (Rules);
 
       --  A scanner written for other backends only matches nothing in this
       --  one, and the grammar parses differently here than where it was

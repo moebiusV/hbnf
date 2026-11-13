@@ -1,0 +1,16 @@
+; %where and %bind { } for the Ada backend: the code is Ada, the body of a function (`%where`, a Boolean) or a procedure (`%bind { }`) as a
+; scanner's is: its declarations, `begin` and statements; `Text` is what the element before matched, `Len` its length, `P` the parser
+language Ada
+prefix none
+whitespace none
+{
+   with Where_State;
+}
+top = name %where {
+      begin
+         return Len <= 3;
+   } ";" name %bind {
+      begin
+         Where_State.Bound := Where_State.Bound + Len;
+   } "!"
+name = 1*0x61..0x7a

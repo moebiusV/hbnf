@@ -3082,7 +3082,7 @@ package body HBNF_Zig is
             J : Natural := K - 1;
          begin
             while J > First and then Els (J).Kind = Block
-              and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both
+              and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both | B_Where | B_Bind_Code
             loop
                J := J - 1;
             end loop;
@@ -3297,8 +3297,8 @@ package body HBNF_Zig is
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test | B_Num | B_Both
-                 and then not (Els (K).Kind = Block and then Els (K).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both)
+                 and then Els (K + 1).Op in B_As | B_Test | B_Not_Test | B_Num | B_Both | B_Where | B_Bind_Code
+                 and then not (Els (K).Kind = Block and then Els (K).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both | B_Where | B_Bind_Code)
                then
                   Append (Buf, Ind & "const es_" & Sid & "_" & Img (K) & " = p.pos;");
                   Append (Buf, LF);
@@ -3781,7 +3781,31 @@ package body HBNF_Zig is
                         Append (Buf, Ind & "const sc_" & Img (Cx_Seq) & " = p.cx_mark();");
                         Append (Buf, LF);
                      elsif E.Op in B_Where | B_Bind_Code then
-                        Append (Buf, Ind & "@compileError(""a `%where` or `%bind { }` is code, and this grammar has none for Zig"");");
+                        --  the author's Zig, over the text of the element before (as C's is): `p` the parser, `text` what that
+                        --  element matched, `len` its length, `n` the node being made.  `%where` is a block that gives a bool
+                        --  (false fails the alternative), `%bind { }` is statements.  (Zig does not let a parameter take the name of one
+                        --  outside it, so the parser is `parser` and the node `node` here.)
+                        Append (Buf, Ind & "{ const k_ = p.pos; "
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (Base_Of (K))
+                               & "; p.skip_ws(); " else "")
+                          & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (Base_Of (K)))
+                          & "; p.pos = k_; const tx_: []const u8 = p.text[st_..k_]; const ln_ = tx_.len; _ = .{ p, tx_, ln_, st_ };");
+                        Append (Buf, LF);
+                        --  the code is a function body, as C's is (a `return` gives the bool): `n` is the node when the rule has one
+                        declare
+                           Nd : constant String := (if Dst = "n." then "&n" else "{}");
+                        begin
+                           if E.Op = B_Where then
+                              Append (Buf, Ind & "  const ok_: bool = (struct { fn f(parser: anytype, text: []const u8, len: usize, node: anytype) bool { _ = .{ parser, text, len, node };"
+                                & To_String (E.Code) & " } }).f(p, tx_, ln_, " & Nd & ");");
+                              Append (Buf, LF);
+                              Append (Buf, Ind & "  if (!ok_) { p.pos = st_; " & Pref & "p.fail(""a valid "
+                                & To_String (Rules (Owner).Name) & """)" & Cat & "; } }");
+                           else
+                              Append (Buf, Ind & "  (struct { fn f(parser: anytype, text: []const u8, len: usize, node: anytype) void { _ = .{ parser, text, len, node };"
+                                & To_String (E.Code) & " } }).f(p, tx_, ln_, " & Nd & "); }");
+                           end if;
+                        end;
                         Append (Buf, LF);
                      elsif E.Op in B_Not | B_And then
                         --  !x / &x: x is tried at this place and nothing is consumed

@@ -1,0 +1,10 @@
+; %where and %bind { } for the Zig backend: the code is Zig, a function body as C's is, over `text` (what the element before matched),
+; `len`, `parser` and `node` (Zig does not let a parameter take the name of one outside it); `%where` gives a bool (false fails the alternative), `%bind { }` is statements
+language Zig
+prefix none
+whitespace none
+{
+pub var bound: u32 = 0;
+}
+top = name %where { return text.len <= 3; } ";" name %bind { bound += @intCast(len); } "!"
+name = 1*0x61..0x7a

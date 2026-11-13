@@ -23,11 +23,11 @@ for f in read safe unrelated emit-last prefix-lits; do
 	"$CLI" tests/emit/$f.hbnf --backend=c > "$W/$f.c" 2> "$W/$f.err" \
 		|| { echo "emit: FAIL ($f: $(head -c 200 "$W/$f.err"))"; fail=1; }
 done
-# the code of an %emit is the grammar's own: C here, so every other backend says so (a file that says `language Ada`, `Zig` or `Rust`
-# is generated, below)
+# the code of an %emit goes out as it is written (the `language` line picks the layout and the template; code of another language than
+# the backend's is the author's, and the compiler of the generated file says so): C code is generated for every backend
 for b in ada zig rust; do
-	"$CLI" tests/emit/safe.hbnf --backend=$b 2>&1 > /dev/null | grep -q 'which is code written in C' \
-		|| { echo "emit: FAIL (safe: $b does not refuse C code in an %emit)"; fail=1; }
+	"$CLI" tests/emit/safe.hbnf --backend=$b > /dev/null 2>&1 \
+		|| { echo "emit: FAIL (safe: $b does not generate an %emit written in C)"; fail=1; }
 done
 # the generated parser runs the emits in order, with `$$` and the elements as variables, and a
 # parse that fails reports where without running them again
@@ -292,6 +292,18 @@ CASES
 	if rust_case prefix-lits trace_main; then
 		rust_run prefix-lits '[ab]' table; rust_run prefix-lits '[[ab]]' array_table; rust_run prefix-lits '[ab]]' error
 	fi
+fi
+# %where and %bind { } (code that tests or acts on the text of the element before) in Rust, Zig and Ada: function bodies, as in C
+if command -v rustc > /dev/null 2>&1; then
+	if rust_case where where_main; then
+		for c in 'abc;de!=true 2' 'abcd;de!=false 0' 'a;bcdef!=true 5' 'a;b=false 1'; do rust_run where "${c%%=*}" "${c#*=}"; done
+	fi
+fi
+if command -v zig > /dev/null 2>&1 && zig_case where where_main; then
+	for c in 'abc;de!=true 2' 'abcd;de!=false 0' 'a;bcdef!=true 5' 'a;b=false 1'; do zig_run where "${c%%=*}" "${c#*=}"; done
+fi
+if command -v gnatmake > /dev/null 2>&1 && ada_case where where_check; then
+	for c in 'abc;de!=true 2' 'abcd;de!=false 0' 'a;bcdef!=true 5' 'a;b=false 1'; do ada_run where where_check "${c%%=*}" "${c#*=}"; done
 fi
 [ $fail = 0 ] && echo "emit: OK (types read; %emit analysed and generated in C, Ada, Zig and Rust, each retry refused)"
 exit $fail

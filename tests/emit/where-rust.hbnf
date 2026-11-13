@@ -1,0 +1,10 @@
+; %where and %bind { } for the Rust backend: the code is Rust, a function body as C's is, over `text` (what the element before matched),
+; `len` and `p`; `%where` gives a bool (false fails the alternative), `%bind { }` is statements
+language Rust
+prefix none
+whitespace none
+{
+pub static mut BOUND: u32 = 0;
+}
+top = name %where { return text.len() <= 3; } ";" name %bind { unsafe { BOUND += len as u32; } } "!"
+name = 1*0x61..0x7a
