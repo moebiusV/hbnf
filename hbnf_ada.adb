@@ -1458,6 +1458,10 @@ package body HBNF_Ada is
       return To_String (Res);
    end Emit;
 
+   function Ctx_On return Boolean is (HBNF_Grammar.Context_Count > 0);
+
+   function Ctx_Const (Name : String) return String is ("Ctx_" & Ada_Ident (Name));
+
    function Switch_Names return String is
       R : Unbounded_String;
    begin
@@ -1515,6 +1519,44 @@ package body HBNF_Ada is
       Append (R, "      return 0;" & LF & "   end Grammar_Named;" & LF);
       return To_String (R);
    end Switch_Support;
+
+   function Context_Support return String is
+      R : Unbounded_String;
+   begin
+      if not Ctx_On then
+         return "";
+      end if;
+      Append (R, LF & "   --  ---- contexts: named sets of names the parser keeps while it reads ----" & LF);
+      for Q in 1 .. HBNF_Grammar.Context_Count loop
+         Append (R, "   " & Ctx_Const (HBNF_Grammar.Context_Name (Q)) & " : constant Natural := " & Img (Q - 1) & ";" & LF);
+      end loop;
+      Append (R,
+        "   type Cx_Entry is record" & LF
+        & "      Ctx  : Natural;" & LF
+        & "      Del  : Boolean;" & LF
+        & "      Name : Unbounded_String;" & LF
+        & "   end record;" & LF
+        & "   package Cx_Vectors is new Ada.Containers.Vectors (Positive, Cx_Entry);" & LF
+        & "   Cx_Log : Cx_Vectors.Vector;" & LF & LF
+        & "   --  an add and a removal are entries; the newest entry of a name says whether it is in; going back is cutting the log" & LF
+        & "   --  to the count P.Ncx had (a failed alternative, the end of a scope)" & LF
+        & "   procedure Cx_Put (P : in out Parser; C : Natural; S : String; Del : Boolean) is" & LF
+        & "   begin" & LF
+        & "      Cx_Log.Set_Length (Ada.Containers.Count_Type (P.Ncx));" & LF
+        & "      Cx_Log.Append (Cx_Entry'(Ctx => C, Del => Del, Name => To_Unbounded_String (S)));" & LF
+        & "      P.Ncx := P.Ncx + 1;" & LF
+        & "   end Cx_Put;" & LF & LF
+        & "   function Cx_Has (P : Parser; C : Natural; S : String) return Boolean is" & LF
+        & "   begin" & LF
+        & "      for I in reverse 1 .. P.Ncx loop" & LF
+        & "         if Cx_Log (I).Ctx = C and then To_String (Cx_Log (I).Name) = S then" & LF
+        & "            return not Cx_Log (I).Del;" & LF
+        & "         end if;" & LF
+        & "      end loop;" & LF
+        & "      return False;" & LF
+        & "   end Cx_Has;" & LF);
+      return To_String (R);
+   end Context_Support;
 
    function Emit_Parser
      (Rules : HBNF_Grammar.Rule_Vectors.Vector; Package_Name : String)
@@ -1807,7 +1849,7 @@ package body HBNF_Ada is
          Tree_Here : constant Boolean := Ends_Tree (Els, First, Last);
          Wrapped : constant Boolean := Tree_Here or else
            (for some K in First .. Last =>
-              Els (K).Kind = Block and then Els (K).Op in B_As | B_Num | B_Both);
+              Els (K).Kind = Block and then Els (K).Op in B_As | B_Num | B_Both | B_Test | B_Not_Test | B_Scope);
          Ovr_Was : constant Natural := Ovr_N;
          Skip_To : Natural := 0;     --  the members of an `all of ( ... )` that its marker has written
          --  the number of the sequence that declared the tag, when a rewrite above it reads it
@@ -1822,6 +1864,18 @@ package body HBNF_Ada is
          end Tag_Sid;
          function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
            (Pfx & "_" & Ada_Ident (To_String (Tag)) & "_" & Tag_Sid (Tag));
+         --  Several operations may follow one element (`x in S not in T`): each asks about the text of that element, so each
+         --  refers to where the element began, not to the operation before it.
+         function Is_Op (J : Natural) return Boolean is
+           (Els (J).Kind = Block and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both);
+         function Base_Of (K : Natural) return Natural is
+            J : Natural := K - 1;
+         begin
+            while J > First and then Is_Op (J) loop
+               J := J - 1;
+            end loop;
+            return J;
+         end Base_Of;
          --  The tags bound inside the groups of the alternative: the rewrite at its end reads them too.
          procedure Group_Tags (V : Element_Vectors.Vector; Top : Boolean; Into : in out Element_Vectors.Vector) is
          begin
@@ -1940,10 +1994,17 @@ package body HBNF_Ada is
                      Append (Buf, Ind & "   " & Tag_Var ("Cl", Els (K).Ctx) & " : Natural := 0;");
                      Append (Buf, LF);
                   end if;
-                  Append (Buf, Ind & "   Es_" & Sid & "_" & Img (K - 1) & " : Natural := 1;");
-                  Append (Buf, LF);
-               elsif Els (K).Kind = Block and then Els (K).Op in B_Num | B_Both then
-                  Append (Buf, Ind & "   Es_" & Sid & "_" & Img (K - 1) & " : Natural := 1;");
+                  if not Is_Op (K - 1) then
+                     Append (Buf, Ind & "   Es_" & Sid & "_" & Img (Base_Of (K)) & " : Natural := 1;");
+                     Append (Buf, LF);
+                  end if;
+               elsif Els (K).Kind = Block and then Els (K).Op in B_Num | B_Both | B_Test | B_Not_Test then
+                  if not Is_Op (K - 1) then
+                     Append (Buf, Ind & "   Es_" & Sid & "_" & Img (Base_Of (K)) & " : Natural := 1;");
+                     Append (Buf, LF);
+                  end if;
+               elsif Els (K).Kind = Block and then Els (K).Op = B_Scope then
+                  Append (Buf, Ind & "   Sc_" & Sid & "_" & Img (K) & " : Natural := 0;");
                   Append (Buf, LF);
                end if;
             end loop;
@@ -2007,6 +2068,10 @@ package body HBNF_Ada is
                         Append (Buf, LF);
                         Append (Buf, Ind & "            Sv_" & Sj & " : constant Natural := P.Pos;");
                         Append (Buf, LF);
+                        if Ctx_On then
+                           Append (Buf, Ind & "            Cx_" & Sj & " : constant Natural := P.Ncx;");
+                           Append (Buf, LF);
+                        end if;
                         Append (Buf, Ind & "            Rc_" & Sj & " : constant " & TN & " := " & RV & ";");
                         Append (Buf, LF);
                         Append (Buf, Ind & "         begin");
@@ -2026,7 +2091,8 @@ package body HBNF_Ada is
                         Append (Buf, LF);
                         Append (Buf, Ind & "            goto Md_" & Sj & ";");
                         Append (Buf, LF);
-                        Append (Buf, Ind & "            <<Mf_" & Sj & ">> P.Failed := False;  P.Pos := Sv_" & Sj & ";  " & RV & " := Rc_" & Sj & ";");
+                        Append (Buf, Ind & "            <<Mf_" & Sj & ">> P.Failed := False;  P.Pos := Sv_" & Sj & ";  "
+                          & (if Ctx_On then "P.Ncx := Cx_" & Sj & ";  " else "") & RV & " := Rc_" & Sj & ";");
                         Append (Buf, LF);
                         Append (Buf, Ind & "            <<Md_" & Sj & ">> null;");
                         Append (Buf, LF);
@@ -2068,7 +2134,8 @@ package body HBNF_Ada is
                E : constant Element_Access := Els (K);
             begin
                if K < Last and then Els (K + 1).Kind = Block
-                 and then Els (K + 1).Op in B_As | B_Num | B_Both
+                 and then Els (K + 1).Op in B_As | B_Num | B_Both | B_Test | B_Not_Test
+                 and then not Is_Op (K)
                then
                   Append (Buf, Ind & "Es_" & Sid & "_" & Img (K) & " := P.Pos;");
                   Append (Buf, LF);
@@ -2286,10 +2353,10 @@ package body HBNF_Ada is
                      elsif E.Op = B_As then
                         --  where the text of the element before began, after the blanks
                         Append (Buf, Ind & "declare Kq : constant Natural := P.Pos; begin"
-                          & (if Skips then " P.Pos := Es_" & Sid & "_" & Img (K - 1)
+                          & (if Skips then " P.Pos := Es_" & Sid & "_" & Img (Base_Of (K))
                                & "; Skip_Ws (P);" else "")
                           & " " & Tag_Var ("Cp", E.Ctx) & " := "
-                          & (if Skips then "P.Pos" else "Es_" & Sid & "_" & Img (K - 1))
+                          & (if Skips then "P.Pos" else "Es_" & Sid & "_" & Img (Base_Of (K)))
                           & "; " & Tag_Var ("Cl", E.Ctx) & " := Kq - "
                           & Tag_Var ("Cp", E.Ctx)
                           & (if E.Id = 1
@@ -2362,6 +2429,45 @@ package body HBNF_Ada is
                           & Ada_Escape (To_String (E.Ctx)) & "`""); " & To_String (FA) & " end if;");
                         Append (Buf, LF);
                         Append (Buf, Ind & "P.Pos := P.Pos + " & Cap ("Cl", E) & ";");
+                        Append (Buf, LF);
+                     elsif E.Op in B_Test | B_Not_Test then
+                        --  `x in S` / `x not in S`: the text x matched is (not) in the context
+                        Append (Buf, Ind & "declare Kq : constant Natural := P.Pos; St : Natural := Es_" & Sid & "_"
+                          & Img (Base_Of (K)) & "; begin"
+                          & (if Skips then " P.Pos := St; Skip_Ws (P); St := P.Pos;" else "") & " P.Pos := Kq;");
+                        Append (Buf, LF);
+                        Append (Buf, Ind & "   if " & (if E.Op = B_Test then "not " else "") & "Cx_Has (P, "
+                          & Ctx_Const (To_String (E.Ctx)) & ", P.Text (St .. Kq - 1)) then P.Pos := St; Fail (P, ""a name "
+                          & (if E.Op = B_Test then "in `" else "not in `") & Ada_Escape (To_String (E.Ctx)) & "`""); "
+                          & To_String (FA) & " end if; end;");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Bind then
+                        --  `%bind set field`: the text of the field just read goes into the set
+                        declare
+                           Path : constant String := To_String (E.Path);
+                           R    : Unbounded_String := To_Unbounded_String (Dst);
+                           B    : Natural := Path'First;
+                        begin
+                           for Q in Path'Range loop
+                              if Path (Q) = '.' then
+                                 Append (R, Ada_Field (Path (B .. Q - 1)) & ".");
+                                 B := Q + 1;
+                              end if;
+                           end loop;
+                           Append (R, Ada_Field (Path (B .. Path'Last)));
+                           Append (Buf, Ind & "Cx_Put (P, " & Ctx_Const (To_String (E.Ctx)) & ", To_String ("
+                             & To_String (R) & "), False);");
+                           Append (Buf, LF);
+                        end;
+                     elsif E.Op in B_Add | B_Remove then
+                        --  `=> set += tag` and `set -= tag`: the text kept as the tag goes into the set (Path), or out of it
+                        Append (Buf, Ind & "Cx_Put (P, " & Ctx_Const (To_String (E.Path)) & ", P.Text ("
+                          & Tag_Var ("Cp", E.Ctx) & " .. " & Tag_Var ("Cp", E.Ctx) & " + " & Tag_Var ("Cl", E.Ctx)
+                          & " - 1), " & (if E.Op = B_Remove then "True" else "False") & ");");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Scope then
+                        --  what is bound inside the rest of this sequence is gone at its end
+                        Append (Buf, Ind & "Sc_" & Sid & "_" & Img (K) & " := P.Ncx;");
                         Append (Buf, LF);
                      elsif E.Op = B_Switch then
                         if E.Path = Null_Unbounded_String then
@@ -2455,7 +2561,7 @@ package body HBNF_Ada is
                            Append (Buf, LF);
                            Append (Buf, Ind & "   Kk  : constant Natural := P.Pos;");
                            Append (Buf, LF);
-                           Append (Buf, Ind & "   St  : Natural := Es_" & Sid & "_" & Img (K - 1) & ";");
+                           Append (Buf, Ind & "   St  : Natural := Es_" & Sid & "_" & Img (Base_Of (K)) & ";");
                            Append (Buf, LF);
                            Append (Buf, Ind & "   In_Set : Boolean := False;");
                            Append (Buf, LF);
@@ -2523,7 +2629,7 @@ package body HBNF_Ada is
                      elsif E.Op = B_Num then
                         --  the number the element before matched
                         Append (Buf, Ind & "declare Vv : Long_Long_Integer := 0; begin"
-                          & " for Qq in Es_" & Sid & "_" & Img (K - 1) & " .. P.Pos - 1 loop"
+                          & " for Qq in Es_" & Sid & "_" & Img (Base_Of (K)) & " .. P.Pos - 1 loop"
                           & " Vv := Vv * 10 + Long_Long_Integer (Character'Pos (P.Text (Qq)) - 48); end loop;"
                           & " Frames.Replace_Element (Fb +"
                           & Natural'Image (Natural'Max (0, HBNF_Grammar.Slot_Of
@@ -2660,6 +2766,12 @@ package body HBNF_Ada is
             end;
             end if;
          end loop;
+         for Q in reverse First .. Last loop
+            if Els (Q).Kind = Block and then Els (Q).Op = B_Scope then
+               Append (Buf, Ind & "P.Ncx := Sc_" & Sid & "_" & Img (Q) & ";");
+               Append (Buf, LF);
+            end if;
+         end loop;
          if Wrapped then
             Append (Buf, Ind & "end;");
             Append (Buf, LF);
@@ -2750,7 +2862,8 @@ package body HBNF_Ada is
             Emit_Seq (Owner, Els, Nd.First, Nd.Last, Rec, Buf, Ind & "   ", Alloc_Records);
             Append (Buf, Ind & "   declare");
             Append (Buf, LF);
-            Append (Buf, Ind & "      Pf : constant Natural := P.Pos;");
+            Append (Buf, Ind & "      Pf : constant Natural := P.Pos;"
+              & (if Ctx_On then "  Cxf : constant Natural := P.Ncx;" else ""));
             Append (Buf, LF);
             Append (Buf, Ind & "   begin");
             Append (Buf, LF);
@@ -2777,7 +2890,7 @@ package body HBNF_Ada is
                         Append (Buf, LF);
                         Append (Buf, Ind & "      end;");
                         Append (Buf, LF);
-                        Append (Buf, Ind & "      P.Failed := False; P.Pos := Pf;");
+                        Append (Buf, Ind & "      P.Failed := False; P.Pos := Pf;" & (if Ctx_On then " P.Ncx := Cxf;" else ""));
                         Append (Buf, LF);
                      else
                         Node (Kid, Rec, "goto " & Inner & ";");
@@ -2808,7 +2921,7 @@ package body HBNF_Ada is
             Append (Buf, Ind & "end;");
             Append (Buf, LF);
             --  reached only when the branch failed: the next one starts where this began
-            Append (Buf, Ind & "P.Failed := False; P.Pos := Save;");
+            Append (Buf, Ind & "P.Failed := False; P.Pos := Save;" & (if Ctx_On then " P.Ncx := Save_Cx;" else ""));
             Append (Buf, LF);
             FA := Old_FA;
          end loop;
@@ -2833,6 +2946,10 @@ package body HBNF_Ada is
             then
                Append (Buf, "   Save : Natural;");
                Append (Buf, LF);
+               if Ctx_On then
+                  Append (Buf, "   Save_Cx : Natural;");
+                  Append (Buf, LF);
+               end if;
             end if;
          end if;
       end Emit_Rule_Decl;
@@ -2956,6 +3073,10 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                   Append (Buf, "            Start : constant Natural := P.Pos;");
                   Append (Buf, LF);
+                  if Ctx_On then
+                     Append (Buf, "            Cx_St : constant Natural := P.Ncx;");
+                     Append (Buf, LF);
+                  end if;
                   Append (Buf, "         begin");
                   Append (Buf, LF);
                   if R.Whitespace /= Null_Unbounded_String then
@@ -2990,12 +3111,12 @@ package body HBNF_Ada is
                   elsif Is_Struct (To_String (Simple)) then
                      Append (Buf, "            declare V : " & Ada_Ident (To_String (Simple))
                        & "_Type := " & Rule_Call (To_String (R.Name), To_String (Simple), E) & "; begin"
-                       & " if P.Failed then P.Failed := False; P.Pos := Start; exit; end if;"
+                       & " if P.Failed then P.Failed := False; P.Pos := Start;" & (if Ctx_On then " P.Ncx := Cx_St;" else "") & " exit; end if;"
                        & " R.Append (new " & Ada_Ident (To_String (Simple)) & "_Type'(V)); end;");
                   elsif Alias_Record (Rules, To_String (Simple)) /= 0 then
                      Append (Buf, "            declare V : " & Ada_Ident (To_String (Simple))
                        & "_Type := " & Rule_Call (To_String (R.Name), To_String (Simple), E) & "; begin"
-                       & " if P.Failed then P.Failed := False; P.Pos := Start; exit; end if;"
+                       & " if P.Failed then P.Failed := False; P.Pos := Start;" & (if Ctx_On then " P.Ncx := Cx_St;" else "") & " exit; end if;"
                        & " R.Append (new "
                        & Ada_Ident
                            (To_String
@@ -3004,7 +3125,7 @@ package body HBNF_Ada is
                   else
                      Append (Buf, "            declare V : " & Elem & " := "
                        & Rule_Call (To_String (R.Name), To_String (Simple), E) & "; begin"
-                       & " if P.Failed then P.Failed := False; P.Pos := Start; exit; end if;"
+                       & " if P.Failed then P.Failed := False; P.Pos := Start;" & (if Ctx_On then " P.Ncx := Cx_St;" else "") & " exit; end if;"
                        & " R.Append (V); end;");
                   end if;
                   Append (Buf, LF);
@@ -3026,7 +3147,7 @@ package body HBNF_Ada is
                        & Img (Natural (E.Max)) & ";");
                      Append (Buf, LF);
                   end if;
-                  Append (Buf, "         Save := P.Pos;");
+                  Append (Buf, "         Save := P.Pos;" & (if Ctx_On then "  Save_Cx := P.Ncx;" else ""));
                   Append (Buf, LF);
                   Append (Buf, "         declare");
                   Append (Buf, LF);
@@ -3080,7 +3201,8 @@ package body HBNF_Ada is
                               Append (Buf, LF);
                               Append (Buf, "               end;");
                               Append (Buf, LF);
-                              Append (Buf, "               if P.Failed then P.Failed := False; P.Pos := Save; end if;");
+                              Append (Buf, "               if P.Failed then P.Failed := False; P.Pos := Save;"
+                                & (if Ctx_On then " P.Ncx := Save_Cx;" else "") & " end if;");
                               Append (Buf, LF);
                               Append (Buf, "            end if;");
                               Append (Buf, LF);
@@ -3341,11 +3463,15 @@ package body HBNF_Ada is
             Append (Buf, LF);
             Append (Buf, "         Save : constant Natural := P.Pos;");
             Append (Buf, LF);
+            if Ctx_On then
+               Append (Buf, "         Save_Cx : constant Natural := P.Ncx;");
+               Append (Buf, LF);
+            end if;
             Append (Buf, "      begin");
             Append (Buf, LF);
             Cur_TN := To_Unbounded_String (TN);
             Emit_Alternation (Idx, P, TN, Buf, "         ", True);
-            Append (Buf, "         P.Pos := Save;");
+            Append (Buf, "         P.Pos := Save;" & (if Ctx_On then "  P.Ncx := Save_Cx;" else ""));
             Append (Buf, LF);
             Append (Buf, "         Fail (P, ""a " & NM & """);");
             Append (Buf, LF);
@@ -4844,7 +4970,7 @@ package body HBNF_Ada is
          HBNF_Template.Put (V, "nocase_with", Nocase_With);
          HBNF_Template.Put (V, "free_with", "with Ada.Unchecked_Deallocation;" & LF);
          HBNF_Template.Put (V, "switch_with",
-           (if HBNF_Grammar.Uses_Switch then "with Ada.Containers.Vectors;" & LF else ""));
+           (if HBNF_Grammar.Uses_Switch or else Ctx_On then "with Ada.Containers.Vectors;" & LF else ""));
          HBNF_Template.Put (V, "hosted_with",
            To_String (Hosted_Withs)
            & (if Parents_On and then Length (Ast_Body) > 0
@@ -5324,8 +5450,9 @@ package body HBNF_Ada is
            (if HBNF_Grammar.Uses_Switch
             then "      G   : Natural := 0;   --  the current grammar: 0 the including one, k the kth included" & LF
                  & "      Nev : Natural := 0;   --  how many switches are in force, in Events" & LF
-            else ""));
-         HBNF_Template.Put (V, "switch_support", Switch_Support);
+            else "")
+           & (if Ctx_On then "      Ncx : Natural := 0;   --  how many context entries are in force, in Cx_Log" & LF else ""));
+         HBNF_Template.Put (V, "switch_support", Switch_Support & Context_Support);
          HBNF_Template.Put (V, "parser_bit",
            (if Is_Hosted
             then "      Bit  : Natural := 0;   --  bits of the octet at Pos a bit rule has read" & LF
@@ -5446,6 +5573,7 @@ package body HBNF_Ada is
                  & "   begin" & LF
                  & "      Enter (P, " & Img (I) & ");" & LF
                  & "      declare" & LF
+                 & (if Ctx_On then "         Cx0 : constant Natural := P.Ncx;" & LF else "")
                  & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
                     then "         Save : constant Natural := P.Pos;" & LF
                          & "         R : " & Ret_Type (I) & " := Body_Of_"
@@ -5453,6 +5581,7 @@ package body HBNF_Ada is
                  & Ada_Ident (NM) & " (P);" & LF
                  & "      begin" & LF
                  & "         P.Depth := P.Depth - 1;" & LF
+                 & (if Ctx_On then "         if P.Failed then P.Ncx := Cx0; end if;" & LF else "")
                  & (if Analyze (Rules, I).Kind = Struct and then Has_Span (Analyze (Rules, I))
                     then (if Rules (I).Whitespace /= Null_Unbounded_String
                           then "         declare K : constant Natural := P.Pos; begin P.Pos := Save;"

@@ -1330,7 +1330,7 @@ package body HBNF_Compilable is
          for E of V loop
             if (E.Kind = HBNF_Grammar.Block
                 and then ((E.Op in HBNF_Grammar.B_Fact | HBNF_Grammar.B_Reread and then Backend not in "rust" | "zig")
-                          or else (E.Op in HBNF_Grammar.B_Add | HBNF_Grammar.B_Remove and then Backend not in "rust" | "zig")))
+                          or else (E.Op in HBNF_Grammar.B_Add | HBNF_Grammar.B_Remove and then Backend not in "rust" | "zig" | "ada")))
               or else (E.Kind = HBNF_Grammar.Group and then Has_Other (E.Items))
             then
                return True;

@@ -1,0 +1,9 @@
+ok	typedef A;(A)*x;
+bad	int B;(B)*x;
+bad	(C)*x;
+ok	{typedef T;(T)*x;}
+bad	{typedef T;}(T)*x;
+bad	int E;(E)*x;
+ok	typedef A;{typedef B;}(A)*x;
+bad	typedef A;{typedef B;}(B)*x;
+ok	{typedef T;{(T)*x;}}

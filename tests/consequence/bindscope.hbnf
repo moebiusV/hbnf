@@ -1,0 +1,14 @@
+; `%bind set field` and `%scope`: a typedef adds its name, a name read as a variable does not, a guess that bound a name and gave up
+; leaves nothing bound, and what a block binds is gone after it (the context of tests/context/ctx.hbnf, in four backends).
+prefix none
+context types
+whitespace none
+
+prog = *stmt
+stmt = "typedef " name %bind types += name ";"
+     | "int " name %bind types += name "!"
+     | "int " name ";"
+     | "{" %scope *stmt "}"
+     | "(" tname ")*" name ";"
+tname = name in types
+name  = 1*( 0x41..0x5A | 0x61..0x7A )
