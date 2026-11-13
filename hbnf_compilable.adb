@@ -1329,7 +1329,7 @@ package body HBNF_Compilable is
       begin
          for E of V loop
             if (E.Kind = HBNF_Grammar.Block
-                and then ((E.Op in HBNF_Grammar.B_Fact | HBNF_Grammar.B_Reread and then Backend not in "rust" | "zig")
+                and then ((E.Op in HBNF_Grammar.B_Fact | HBNF_Grammar.B_Reread and then Backend not in "rust" | "zig" | "ada")
                           or else (E.Op in HBNF_Grammar.B_Add | HBNF_Grammar.B_Remove and then Backend not in "rust" | "zig" | "ada")))
               or else (E.Kind = HBNF_Grammar.Block
                        and then ((E.Op in HBNF_Grammar.B_Test | HBNF_Grammar.B_Not_Test and then To_String (E.Ctx) = "hidden")

@@ -76,4 +76,18 @@ done
 # a line without the time prefix is an error, as in soju (it fails the read of the day)
 printf '[12:00:01] <a> b\nno prefix\n' > "$W/bad.log"
 n=$((n + 1)); "$W/znclog" "$W/bad.log" > /dev/null 2>&1 && { echo "znclog: FAIL (a line without the prefix is not refused)"; fail=1; }
+# the Ada backend generates the same grammar (its facts-free rewrites, with the escapes of the templates translated), and reads the same lines
+# (it cannot show the text the rewrites made, only that the lines are read or refused)
+if command -v gnatmake > /dev/null 2>&1; then
+	mkdir -p "$W/ad"
+	if "$CLI" corpus/znclog/znclog.hbnf --backend=ada --package=Zl > "$W/ad/all.ada" 2> "$W/err"; then
+		aroot=$(grep -o "return [A-Za-z0-9_]*_Type" "$W/ad/all.ada" | head -1 | sed 's/return \(.*\)_Type/\1/')
+		sed "s/MODULE/Zl/g; s/ROOT/$aroot/g" corpus/posix/check.adb > "$W/ad/check.adb"
+		if (cd "$W/ad" && gnatchop -w all.ada > /dev/null 2>&1 && gnatmake -q -gnat2022 -gnatws check.adb -o m > cc.txt 2>&1); then
+			n=$((n + 2))
+			got=$("$W/ad/m" "$W/fixed.log" 2>&1 | cut -d' ' -f1 | head -1); [ "$got" = ok ] || { echo "znclog: FAIL (Ada refuses the written lines: $got)"; fail=1; }
+			got=$("$W/ad/m" "$W/bad.log" 2>&1 | cut -d' ' -f1 | head -1); [ "$got" = bad ] || { echo "znclog: FAIL (Ada reads a line without the prefix: $got)"; fail=1; }
+		else echo "znclog: FAIL (the Ada parser does not compile: $(grep -m2 error "$W/ad/cc.txt" | head -c 300))"; fail=1; fi
+	else echo "znclog: FAIL (Ada does not generate: $(head -c 300 "$W/err"))"; fail=1; fi
+fi
 [ $fail -eq 0 ] && echo "znclog: OK ($n checks: 15 written lines and 30000 fuzzed ones give the Go code's fields; a line without the prefix is refused)" || exit 1

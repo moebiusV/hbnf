@@ -3725,7 +3725,7 @@ package body HBNF_Zig is
                                  Append (Buf, LF);
                               end;
                            end if;
-                           Append (Buf, Ind & "  p.rr = true; p.rr_s = st_; p.rr_e = k_; p.rr_t = rt_; "
+                           Append (Buf, Ind & "  if (!p.rr) { p.rr = true; p.rr_s = st_; p.rr_e = k_; p.rr_t = rt_; } "
                              & Pref & "p.fail(""a rewrite"")" & Cat & "; }");
                            Append (Buf, LF);
                         end;

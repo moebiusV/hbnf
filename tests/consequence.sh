@@ -107,8 +107,8 @@ run() {
 }
 run names stmt rza
 run bindscope stmt rza
-run macros define rz
-run macros-rewind define rz
+run macros define rza
+run macros-rewind define rza
 run macros-hide macro-use
 run fn ''
 

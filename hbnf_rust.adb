@@ -3304,7 +3304,7 @@ package body HBNF_Rust is
                                  Append (Buf, LF);
                               end;
                            end if;
-                           Append (Buf, Ind & "  p.rr = Some((st_, k_, sb_)); return Err(p.fail(""a rewrite"")); }");
+                           Append (Buf, Ind & "  if p.rr.is_none() { p.rr = Some((st_, k_, sb_)); } return Err(p.fail(""a rewrite"")); }");
                            Append (Buf, LF);
                         end;
                      elsif E.Op in B_Add | B_Remove then

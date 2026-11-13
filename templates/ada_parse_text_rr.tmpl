@@ -1,0 +1,41 @@
+   function Parse_Text (Text : String) return {{&root_type}} is
+      --  A 1-based copy: positions are indexes into it, wherever the
+      --  caller's string starts.
+      function Rebase (S : String) return String is
+         R : String (1 .. S'Length);
+      begin
+         R := S;
+         return R;
+      end Rebase;
+
+      --  A rewrite (`=> template`) replaces the text a match stands for and the parse is read again on the new text: what was read
+      --  before the match is the same, a definition that made a fact makes it again, and a use that was replaced is no longer there
+      --  to match.  The tree of a parse that is started over is dropped.
+      Cur : Unbounded_String := To_Unbounded_String (Text);
+   begin
+      loop
+         declare
+            T : aliased constant String := Rebase (To_String (Cur));
+            P : Parser := (Text => T'Unchecked_Access, Pos => 1, Last => Natural'Last{{&bit_init}}, others => <>);
+            R : {{&root_type}};
+         begin
+{{&reset}}            begin
+{{&lead_ws}}               R := {{&root_fn}} (P);
+               if not P.Rr then
+                  if P.Failed then
+                     raise Parse_Error with Render (P);
+                  end if;
+{{&trail_ws}}                  if P.Pos <= T'Last then
+                     Fail (P, "end of config");
+                     raise Parse_Error with Render (P);
+                  end if;
+               end if;
+            end;
+            if P.Rr then
+               Cur := To_Unbounded_String (T (T'First .. P.Rr_S - 1) & To_String (P.Rr_T) & T (P.Rr_E .. T'Last));
+            else
+{{&actions}}               return R;
+            end if;
+         end;
+      end loop;
+   end Parse_Text;

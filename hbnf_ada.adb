@@ -1520,6 +1520,136 @@ package body HBNF_Ada is
       return To_String (R);
    end Switch_Support;
 
+   function Reread_Support return String is
+   begin
+      if not HBNF_Grammar.Uses_Reread then
+         return "";
+      end if;
+      return LF
+        & "" & LF
+        & "   --  `with tag.params = tag2`: in b, each name of the comma-separated list ps is replaced by the matching argument of the list as" & LF
+        & "   --  (split at the commas outside brackets and strings, blanks trimmed); both lists may be kept with their outer brackets." & LF
+        & "   function Bnf_Subst (B, Ps_In, As_In : String) return String is" & LF
+        & "      type Span is record" & LF
+        & "         F, L : Natural;" & LF
+        & "      end record;" & LF
+        & "      Ps_F : Natural := Ps_In'First;" & LF
+        & "      Ps_L : Natural := Ps_In'Last;" & LF
+        & "      As_F : Natural := As_In'First;" & LF
+        & "      As_L : Natural := As_In'Last;" & LF
+        & "      Pn, An : array (1 .. 32) of Span;" & LF
+        & "      Np, Na : Natural := 0;" & LF
+        & "      R : Unbounded_String;" & LF
+        & "      function Trim_Span (S : String; F, L : Natural) return Span is" & LF
+        & "         A : Natural := F;" & LF
+        & "         Z : Natural := L;" & LF
+        & "      begin" & LF
+        & "         while A <= Z and then S (A) in ' ' | ASCII.HT | ASCII.LF loop" & LF
+        & "            A := A + 1;" & LF
+        & "         end loop;" & LF
+        & "         while Z >= A and then S (Z) in ' ' | ASCII.HT | ASCII.LF loop" & LF
+        & "            Z := Z - 1;" & LF
+        & "         end loop;" & LF
+        & "         return (A, Z);" & LF
+        & "      end Trim_Span;" & LF
+        & "   begin" & LF
+        & "      if Ps_L > Ps_F and then Ps_In (Ps_F) = '(' and then Ps_In (Ps_L) = ')' then" & LF
+        & "         Ps_F := Ps_F + 1;" & LF
+        & "         Ps_L := Ps_L - 1;" & LF
+        & "      end if;" & LF
+        & "      if As_L > As_F and then As_In (As_F) = '(' and then As_In (As_L) = ')' then" & LF
+        & "         As_F := As_F + 1;" & LF
+        & "         As_L := As_L - 1;" & LF
+        & "      end if;" & LF
+        & "      declare" & LF
+        & "         St : Natural := Ps_F;" & LF
+        & "      begin" & LF
+        & "         for I in Ps_F .. Ps_L + 1 loop" & LF
+        & "            if I = Ps_L + 1 or else Ps_In (I) = ',' then" & LF
+        & "               declare" & LF
+        & "                  Sp : constant Span := Trim_Span (Ps_In, St, I - 1);" & LF
+        & "               begin" & LF
+        & "                  if Sp.L >= Sp.F and then Np < 32 then" & LF
+        & "                     Np := Np + 1;" & LF
+        & "                     Pn (Np) := Sp;" & LF
+        & "                  end if;" & LF
+        & "               end;" & LF
+        & "               St := I + 1;" & LF
+        & "            end if;" & LF
+        & "         end loop;" & LF
+        & "      end;" & LF
+        & "      declare" & LF
+        & "         St    : Natural := As_F;" & LF
+        & "         Depth : Integer := 0;" & LF
+        & "         Q     : Character := ASCII.NUL;" & LF
+        & "      begin" & LF
+        & "         for I in As_F .. As_L + 1 loop" & LF
+        & "            if I <= As_L then" & LF
+        & "               declare" & LF
+        & "                  C : constant Character := As_In (I);" & LF
+        & "               begin" & LF
+        & "                  if Q /= ASCII.NUL then" & LF
+        & "                     if C = Q then" & LF
+        & "                        Q := ASCII.NUL;" & LF
+        & "                     end if;" & LF
+        & "                  elsif C = '""' or else C = ''' then" & LF
+        & "                     Q := C;" & LF
+        & "                  elsif C = '(' then" & LF
+        & "                     Depth := Depth + 1;" & LF
+        & "                  elsif C = ')' then" & LF
+        & "                     Depth := Depth - 1;" & LF
+        & "                  end if;" & LF
+        & "               end;" & LF
+        & "            end if;" & LF
+        & "            if I = As_L + 1 or else (As_In (I) = ',' and then Depth = 0 and then Q = ASCII.NUL) then" & LF
+        & "               if Na < 32 then" & LF
+        & "                  Na := Na + 1;" & LF
+        & "                  An (Na) := Trim_Span (As_In, St, I - 1);" & LF
+        & "               end if;" & LF
+        & "               St := I + 1;" & LF
+        & "            end if;" & LF
+        & "         end loop;" & LF
+        & "      end;" & LF
+        & "      declare" & LF
+        & "         I : Natural := B'First;" & LF
+        & "      begin" & LF
+        & "         while I <= B'Last loop" & LF
+        & "            declare" & LF
+        & "               C : constant Character := B (I);" & LF
+        & "            begin" & LF
+        & "               if C = '_' or else C in 'A' .. 'Z' | 'a' .. 'z' then" & LF
+        & "                  declare" & LF
+        & "                     J   : Natural := I;" & LF
+        & "                     Hit : Natural := 0;" & LF
+        & "                  begin" & LF
+        & "                     while J <= B'Last and then (B (J) = '_' or else B (J) in 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9') loop" & LF
+        & "                        J := J + 1;" & LF
+        & "                     end loop;" & LF
+        & "                     for K in 1 .. Np loop" & LF
+        & "                        if K <= Na and then Pn (K).L >= Pn (K).F and then Ps_In (Pn (K).F .. Pn (K).L) = B (I .. J - 1) then" & LF
+        & "                           Hit := K;" & LF
+        & "                           exit;" & LF
+        & "                        end if;" & LF
+        & "                     end loop;" & LF
+        & "                     if Hit > 0 then" & LF
+        & "                        Append (R, As_In (An (Hit).F .. An (Hit).L));" & LF
+        & "                     else" & LF
+        & "                        Append (R, B (I .. J - 1));" & LF
+        & "                     end if;" & LF
+        & "                     I := J;" & LF
+        & "                  end;" & LF
+        & "               else" & LF
+        & "                  Append (R, C);" & LF
+        & "                  I := I + 1;" & LF
+        & "               end if;" & LF
+        & "            end;" & LF
+        & "         end loop;" & LF
+        & "      end;" & LF
+        & "      return To_String (R);" & LF
+        & "   end Bnf_Subst;" & LF
+        & "" & LF & LF;
+   end Reread_Support;
+
    function Context_Support return String is
       R : Unbounded_String;
    begin
@@ -1535,15 +1665,17 @@ package body HBNF_Ada is
         & "      Ctx  : Natural;" & LF
         & "      Del  : Boolean;" & LF
         & "      Name : Unbounded_String;" & LF
+        & "      Val  : Unbounded_String;   --  the value of a fact (`=> tag.attr = tag2`), when the entry is one" & LF
+        & "      Has_Val : Boolean := False;" & LF
         & "   end record;" & LF
         & "   package Cx_Vectors is new Ada.Containers.Vectors (Positive, Cx_Entry);" & LF
         & "   Cx_Log : Cx_Vectors.Vector;" & LF & LF
         & "   --  an add and a removal are entries; the newest entry of a name says whether it is in; going back is cutting the log" & LF
         & "   --  to the count P.Ncx had (a failed alternative, the end of a scope)" & LF
-        & "   procedure Cx_Put (P : in out Parser; C : Natural; S : String; Del : Boolean) is" & LF
+        & "   procedure Cx_Put (P : in out Parser; C : Natural; S : String; Del : Boolean; Val : String := """"; Has_Val : Boolean := False) is" & LF
         & "   begin" & LF
         & "      Cx_Log.Set_Length (Ada.Containers.Count_Type (P.Ncx));" & LF
-        & "      Cx_Log.Append (Cx_Entry'(Ctx => C, Del => Del, Name => To_Unbounded_String (S)));" & LF
+        & "      Cx_Log.Append (Cx_Entry'(Ctx => C, Del => Del, Name => To_Unbounded_String (S), Val => To_Unbounded_String (Val), Has_Val => Has_Val));" & LF
         & "      P.Ncx := P.Ncx + 1;" & LF
         & "   end Cx_Put;" & LF & LF
         & "   function Cx_Has (P : Parser; C : Natural; S : String) return Boolean is" & LF
@@ -1554,7 +1686,24 @@ package body HBNF_Ada is
         & "         end if;" & LF
         & "      end loop;" & LF
         & "      return False;" & LF
-        & "   end Cx_Has;" & LF);
+        & "   end Cx_Has;" & LF
+        & "" & LF
+        & "   procedure Cx_Fact_Get (P : Parser; C : Natural; S : String; Found : out Boolean; Val : out Unbounded_String) is" & LF
+        & "   begin" & LF
+        & "      Found := False;" & LF
+        & "      Val := Null_Unbounded_String;" & LF
+        & "      if not Cx_Has (P, C, S) then" & LF
+        & "         return;" & LF
+        & "      end if;" & LF
+        & "      for I in reverse 1 .. P.Ncx loop" & LF
+        & "         if Cx_Log (I).Ctx = C and then Cx_Log (I).Has_Val and then To_String (Cx_Log (I).Name) = S then" & LF
+        & "            Val := Cx_Log (I).Val;" & LF
+        & "            Found := True;" & LF
+        & "            return;" & LF
+        & "         end if;" & LF
+        & "      end loop;" & LF
+        & "   end Cx_Fact_Get;" & LF
+        & "" & LF & LF);
       return To_String (R);
    end Context_Support;
 
@@ -1849,7 +1998,7 @@ package body HBNF_Ada is
          Tree_Here : constant Boolean := Ends_Tree (Els, First, Last);
          Wrapped : constant Boolean := Tree_Here or else
            (for some K in First .. Last =>
-              Els (K).Kind = Block and then Els (K).Op in B_As | B_Num | B_Both | B_Test | B_Not_Test | B_Scope);
+              Els (K).Kind = Block and then Els (K).Op in B_As | B_Num | B_Both | B_Test | B_Not_Test | B_Scope | B_Reread);
          Ovr_Was : constant Natural := Ovr_N;
          Skip_To : Natural := 0;     --  the members of an `all of ( ... )` that its marker has written
          --  the number of the sequence that declared the tag, when a rewrite above it reads it
@@ -1866,6 +2015,113 @@ package body HBNF_Ada is
            (Pfx & "_" & Ada_Ident (To_String (Tag)) & "_" & Tag_Sid (Tag));
          --  Several operations may follow one element (`x in S not in T`): each asks about the text of that element, so each
          --  refers to where the element began, not to the operation before it.
+         --  The text a tag kept
+         function Tag_Slice (Tag : String) return String is
+           ("P.Text (" & Tag_Var ("Cp", To_Unbounded_String (Tag)) & " .. " & Tag_Var ("Cp", To_Unbounded_String (Tag))
+            & " + " & Tag_Var ("Cl", To_Unbounded_String (Tag)) & " - 1)");
+         --  A string of a template (C's escapes: \n, \t, \", \\) as an Ada expression
+         function Tmpl_Lit (S : String) return String is
+            R   : Unbounded_String;
+            Cur : Unbounded_String;
+            K   : Natural := S'First;
+            procedure Flush is
+            begin
+               if Length (Cur) > 0 then
+                  if Length (R) > 0 then
+                     Append (R, " & ");
+                  end if;
+                  Append (R, """" & To_String (Cur) & """");
+                  Cur := Null_Unbounded_String;
+               end if;
+            end Flush;
+            procedure Add_Char (Code : String) is
+            begin
+               Flush;
+               if Length (R) > 0 then
+                  Append (R, " & ");
+               end if;
+               Append (R, Code);
+            end Add_Char;
+         begin
+            while K <= S'Last loop
+               if S (K) = '\' and then K < S'Last then
+                  K := K + 1;
+                  case S (K) is
+                     when 'n' => Add_Char ("ASCII.LF");
+                     when 't' => Add_Char ("ASCII.HT");
+                     when 'r' => Add_Char ("ASCII.CR");
+                     when '0' => Add_Char ("ASCII.NUL");
+                     when '"' => Append (Cur, """""");
+                     when others => Append (Cur, S (K));
+                  end case;
+               elsif S (K) = '"' then
+                  Append (Cur, """""");
+               else
+                  Append (Cur, S (K));
+               end if;
+               K := K + 1;
+            end loop;
+            Flush;
+            return (if Length (R) = 0 then """""" else To_String (R));
+         end Tmpl_Lit;
+         --  A rewrite's template (CONTEXTS.md section 30) as the statements that put its parts, one after the other, in `Sb`: a string
+         --  as written, a tag as the text it kept, `tag.attr` as the fact the context `attr` holds for that text.  A function of a tag
+         --  (`f(tag)`) is not generated here.
+         function Tmpl_Ada (T : String) return String is
+            R : U;
+            K : Natural := T'First;
+         begin
+            while K <= T'Last loop
+               if T (K) in ' ' | ASCII.HT then
+                  K := K + 1;
+               elsif T (K) = '"' then
+                  declare
+                     S0 : constant Natural := K + 1;
+                  begin
+                     K := S0;
+                     while K <= T'Last and then T (K) /= '"' loop
+                        if T (K) = '\' then
+                           K := K + 1;
+                        end if;
+                        K := K + 1;
+                     end loop;
+                     Append (R, Ind & "   Append (Sb, " & Tmpl_Lit (T (S0 .. K - 1)) & ");" & LF);
+                     K := K + 1;
+                  end;
+               else
+                  declare
+                     S0 : constant Natural := K;
+                  begin
+                     while K <= T'Last and then T (K) not in ' ' | ASCII.HT | '(' loop
+                        K := K + 1;
+                     end loop;
+                     if K <= T'Last and then T (K) = '(' then
+                        raise Parse_Error with
+                          "rule `" & To_String (Rules (Owner).Name) & "` has a rewrite whose template calls a function (`"
+                          & T (S0 .. K - 1) & "(...)`), which only the C backend generates";
+                     end if;
+                     declare
+                        W : constant String := T (S0 .. K - 1);
+                        D : Natural := 0;
+                     begin
+                        for I in W'Range loop
+                           if W (I) = '.' then
+                              D := I;
+                           end if;
+                        end loop;
+                        if D > 0 then
+                           Append (R, Ind & "   declare Fv : Unbounded_String; Ff : Boolean; begin Cx_Fact_Get (P, "
+                             & Ctx_Const (W (D + 1 .. W'Last)) & ", " & Tag_Slice (W (W'First .. D - 1))
+                             & ", Ff, Fv); if Ff then Append (Sb, Fv); end if; end;" & LF);
+                        else
+                           Append (R, Ind & "   Append (Sb, " & Tag_Slice (W) & ");" & LF);
+                        end if;
+                     end;
+                  end;
+               end if;
+            end loop;
+            return To_String (R);
+         end Tmpl_Ada;
          function Is_Op (J : Natural) return Boolean is
            (Els (J).Kind = Block and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both);
          function Base_Of (K : Natural) return Natural is
@@ -2008,8 +2264,16 @@ package body HBNF_Ada is
                   Append (Buf, LF);
                end if;
             end loop;
+            if (for some K in First .. Last => Els (K).Kind = Block and then Els (K).Op = B_Reread) then
+               Append (Buf, Ind & "   Sg_" & Sid & " : Natural := 1;   --  where this sequence began: a rewrite replaces what it matched");
+               Append (Buf, LF);
+            end if;
             Append (Buf, Ind & "begin");
             Append (Buf, LF);
+            if (for some K in First .. Last => Els (K).Kind = Block and then Els (K).Op = B_Reread) then
+               Append (Buf, Ind & "Sg_" & Sid & " := P.Pos;");
+               Append (Buf, LF);
+            end if;
          end if;
          for K in First .. Last loop
             if K <= Skip_To then
@@ -2457,6 +2721,63 @@ package body HBNF_Ada is
                            Append (R, Ada_Field (Path (B .. Path'Last)));
                            Append (Buf, Ind & "Cx_Put (P, " & Ctx_Const (To_String (E.Ctx)) & ", To_String ("
                              & To_String (R) & "), False);");
+                           Append (Buf, LF);
+                        end;
+                     elsif E.Op = B_Fact then
+                        --  `=> tag.attr = tag2`: the text kept as tag2 is the attribute `attr` of the name kept as tag
+                        Append (Buf, Ind & "Cx_Put (P, " & Ctx_Const (To_String (E.Path)) & ", " & Tag_Slice (To_String (E.Ctx))
+                          & ", False, " & Tag_Slice (To_String (E.Code)) & ", True);");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Reread then
+                        --  `=> template [with tag.attr = tag2]`: the match is replaced by the template, and the parse starts again
+                        --  on the new text (the request is in P, and Parse_Text splices it in and goes round); the first request counts
+                        declare
+                           W  : constant String := To_String (E.Path);
+                           Eq : Natural := 0;
+                        begin
+                           Append (Buf, Ind & "declare");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   Kq : constant Natural := P.Pos;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   St : Natural := Sg_" & Sid & ";");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   Sb : Unbounded_String;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "begin");
+                           Append (Buf, LF);
+                           if Skips then
+                              Append (Buf, Ind & "   P.Pos := St; Skip_Ws (P); St := P.Pos; P.Pos := Kq;");
+                              Append (Buf, LF);
+                           end if;
+                           Append (Buf, Tmpl_Ada (To_String (E.Code)));
+                           if W /= "" then
+                              for I in W'Range loop
+                                 if W (I) = '=' and then Eq = 0 then
+                                    Eq := I;
+                                 end if;
+                              end loop;
+                              declare
+                                 L : constant String := Ada.Strings.Fixed.Trim (W (W'First .. Eq - 1), Ada.Strings.Both);
+                                 A : constant String := Ada.Strings.Fixed.Trim (W (Eq + 1 .. W'Last), Ada.Strings.Both);
+                                 D : Natural := 0;
+                              begin
+                                 for I in L'Range loop
+                                    if L (I) = '.' then
+                                       D := I;
+                                    end if;
+                                 end loop;
+                                 Append (Buf, Ind & "   declare Ps : Unbounded_String; Ff : Boolean; begin Cx_Fact_Get (P, "
+                                   & Ctx_Const (L (D + 1 .. L'Last)) & ", " & Tag_Slice (L (L'First .. D - 1)) & ", Ff, Ps);"
+                                   & " if Ff then Sb := To_Unbounded_String (Bnf_Subst (To_String (Sb), To_String (Ps), "
+                                   & Tag_Slice (A) & ")); end if; end;");
+                                 Append (Buf, LF);
+                              end;
+                           end if;
+                           Append (Buf, Ind & "   if not P.Rr then P.Rr := True; P.Rr_S := St; P.Rr_E := Kq; P.Rr_T := Sb; end if;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "   Fail (P, ""a rewrite""); " & To_String (FA));
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "end;");
                            Append (Buf, LF);
                         end;
                      elsif E.Op in B_Add | B_Remove then
@@ -5451,8 +5772,13 @@ package body HBNF_Ada is
             then "      G   : Natural := 0;   --  the current grammar: 0 the including one, k the kth included" & LF
                  & "      Nev : Natural := 0;   --  how many switches are in force, in Events" & LF
             else "")
-           & (if Ctx_On then "      Ncx : Natural := 0;   --  how many context entries are in force, in Cx_Log" & LF else ""));
-         HBNF_Template.Put (V, "switch_support", Switch_Support & Context_Support);
+           & (if Ctx_On then "      Ncx : Natural := 0;   --  how many context entries are in force, in Cx_Log" & LF else "")
+           & (if HBNF_Grammar.Uses_Reread
+              then "      Rr   : Boolean := False;   --  a rewrite asked for the parse to start over on new text" & LF
+                   & "      Rr_S, Rr_E : Natural := 0;   --  the text it replaces: [Rr_S, Rr_E)" & LF
+                   & "      Rr_T : Unbounded_String;   --  and what it replaces it with" & LF
+              else ""));
+         HBNF_Template.Put (V, "switch_support", Switch_Support & Context_Support & Reread_Support);
          HBNF_Template.Put (V, "parser_bit",
            (if Is_Hosted
             then "      Bit  : Natural := 0;   --  bits of the octet at Pos a bit rule has read" & LF
@@ -6341,7 +6667,7 @@ package body HBNF_Ada is
          HBNF_Template.Put (V, "trail_ws",
            (if Rules (1).Whitespace /= Null_Unbounded_String
             then "      Skip_Ws (P);" & LF else ""));
-         Append (Bdy, HBNF_Template.Render_File ("ada_parse_text", V));
+         Append (Bdy, HBNF_Template.Render_File ((if HBNF_Grammar.Uses_Reread then "ada_parse_text_rr" else "ada_parse_text"), V));
       end;
       Append (Bdy, LF);
       Append (Bdy, LF);
