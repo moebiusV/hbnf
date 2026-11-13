@@ -6896,11 +6896,11 @@ package body HBNF_C is
                               end if;
                               if E.Ctx /= Null_Unbounded_String then
                                  --  `hiding N`: where this text stands, the name kept as N is not read again by `x not in hidden`
-                                 Append (Buf, Ind & "  hbnf_rr_hide (p->text + cp_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid
+                                 Append (Buf, Ind & "  if (!hbnf_rr) hbnf_rr_hide (p->text + cp_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid
                                    & ", cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid & ");");
                                  Append (Buf, LF);
                               end if;
-                              Append (Buf, Ind & "  " & (if E.Id = 1 then "" else "hbnf_rr_len0 = p->len;  ")
+                              Append (Buf, Ind & "  if (!hbnf_rr) hbnf_rr_len0 = p->len;  "
                                 & "hbnf_reread (st_, k_, &sb_, """ & C_Escape (To_String (Rules (Owner).Name)) & """, "
                                 & (if E.Id = 1 then "0" else "1") & ");  p->len = p->pos;   /* nothing more can match: "
                                 & (if E.Id = 1 then "the parse is read again from its start" else "the rule that began here reads it again") & " */");
@@ -11501,8 +11501,8 @@ package body HBNF_C is
             Append (Res, "fail_:" & LF
               & "    if (hbnf_rr) {" & LF
               & "        int q_ = p.quiet;" & LF
-              & "        hbnf_rr_work += strlen(text);   /* what a rewind reads again */" & LF
-              & "        text = hbnf_splice(text, strlen(text));" & LF
+              & "        hbnf_rr_work += hbnf_rr_len0;   /* what a rewind reads again */" & LF
+              & "        text = hbnf_splice(p.text, hbnf_rr_len0);   /* the text as it is now: a continuing rewrite may have changed it */" & LF
               & (if Ctx_On then "        hbnf_ctx_clear();" & LF else "")
               & (if HBNF_Grammar.Uses_Frames
                  then "        hbnf_fsp = 0; hbnf_fb = 0;"

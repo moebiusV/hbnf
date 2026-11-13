@@ -4,12 +4,190 @@
 ; the start), so a macro that uses another is expanded in turn, and one whose name ends its body and whose `(` is in the source is
 ; called (CONTEXTS section 30, 1).  The text after the last rewrite is the result (`hbnf_rr_buf` in the C backend): the C grammars
 ; read it, and read the `#define` lines that are left in it as white space.  Strings, characters and comments are not expanded.
-;   Not yet: `#include`, `#if` with an expression (`0`, `1`, `defined(X)` and `!defined(X)` only), `#elif`, `#` and `##`, `__VA_ARGS__`,
-;   `__LINE__`, `__FILE__`.  A macro is not expanded inside its own expansion (`hiding N` and `x not in hidden`: `#define if x(a); if` ends), and
+;   `#if` and `#elif` read a constant expression: its macros are expanded (and `defined X`, `defined(X)` made 1 or 0) as it is read, and a
+;   small C function (about 120 lines, the one piece of native code) evaluates it as `intmax_t` / `uintmax_t` arithmetic, which says which
+;   branch is taken; the text of the branches is read raw until then (a `#define` in a branch that is not taken has no effect), and the
+;   branch taken is read again.
+;   Not yet: `#include`, `#` and `##`, `__VA_ARGS__`, `__LINE__`, `__FILE__`.  A macro is not expanded inside its own expansion (`hiding N` and `x not in hidden`: `#define if x(a); if` ends), and
 ;   an argument is expanded before it goes into the body (rules that expand read it); an expansion that adds a comma to an argument is split
 ;   at it, where the standard splits the argument before it is expanded.
 prefix none
 whitespace none
+{
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+/* A constant expression of `#if`, as the C standard has it (6.10.1): integer constants, character constants, an identifier that is no
+   macro is 0, unary and binary operators, ?:, and the comma; arithmetic is intmax_t, or uintmax_t when an operand is unsigned. */
+typedef struct { intmax_t v; int u; } cpp_v;
+static const char *cpp_p, *cpp_e;
+static int cpp_err;
+static int cpp_nev;   /* > 0 inside an operand that is not evaluated (the right of a `||` that is decided, a `?:` branch not taken): its division by zero is no error */
+static void cpp_ws(void) {
+    for (;;) {
+        while (cpp_p < cpp_e && (isspace((unsigned char)*cpp_p) || (*cpp_p == '\\' && cpp_p + 1 < cpp_e && (cpp_p[1] == '\n' || cpp_p[1] == '\r')))) cpp_p++;
+        if (cpp_p + 1 < cpp_e && cpp_p[0] == '/' && cpp_p[1] == '*') { cpp_p += 2; while (cpp_p + 1 < cpp_e && !(cpp_p[0] == '*' && cpp_p[1] == '/')) cpp_p++; cpp_p = cpp_p + 1 < cpp_e ? cpp_p + 2 : cpp_e; }
+        else if (cpp_p + 1 < cpp_e && cpp_p[0] == '/' && cpp_p[1] == '/') { while (cpp_p < cpp_e && *cpp_p != '\n') cpp_p++; }
+        else break;
+    }
+}
+static int cpp_op(const char *op) { size_t n = strlen(op); cpp_ws(); if ((size_t)(cpp_e - cpp_p) >= n && memcmp(cpp_p, op, n) == 0) { cpp_p += n; return 1; } return 0; }
+/* an operator that stands whole: `|` is not the front of `||`, `&` of `&&`, `<` of `<<` or `<=`, `>` of `>>` or `>=` */
+static int cpp_match(const char *op) {
+    size_t n = strlen(op);
+    char c;
+    cpp_ws();
+    if ((size_t)(cpp_e - cpp_p) < n || memcmp(cpp_p, op, n) != 0) return 0;
+    c = (size_t)(cpp_e - cpp_p) > n ? cpp_p[n] : 0;
+    if (n == 1 && ((op[0] == '|' && c == '|') || (op[0] == '&' && c == '&') || (op[0] == '<' && (c == '<' || c == '=')) || (op[0] == '>' && (c == '>' || c == '=')))) return 0;
+    return 1;
+}
+static cpp_v cpp_cond(void);
+static cpp_v cpp_comma(void);
+static cpp_v cpp_mk(intmax_t v, int u) { cpp_v r; r.v = u ? (intmax_t)(uintmax_t)v : v; r.u = u; return r; }
+static int cpp_esc(void) {   /* after a backslash in a character constant */
+    int c = (unsigned char)*cpp_p++;
+    switch (c) {
+    case 'n': return '\n'; case 't': return '\t'; case 'r': return '\r'; case 'a': return 7; case 'b': return 8; case 'f': return 12; case 'v': return 11;
+    case 'x': { int v = 0; while (cpp_p < cpp_e && isxdigit((unsigned char)*cpp_p)) { v = v * 16 + (isdigit((unsigned char)*cpp_p) ? *cpp_p - '0' : (tolower((unsigned char)*cpp_p) - 'a' + 10)); cpp_p++; } return v; }
+    default:
+        if (c >= '0' && c <= '7') { int v = c - '0', k = 1; while (k < 3 && cpp_p < cpp_e && *cpp_p >= '0' && *cpp_p <= '7') { v = v * 8 + (*cpp_p++ - '0'); k++; } return v; }
+        return c;
+    }
+}
+static cpp_v cpp_primary(void) {
+    cpp_v r = cpp_mk(0, 0);
+    cpp_ws();
+    if (cpp_p >= cpp_e) { cpp_err = 1; return r; }
+    if (*cpp_p == '(') { cpp_p++; r = cpp_cond(); if (!cpp_op(")")) cpp_err = 1; return r; }
+    if (isdigit((unsigned char)*cpp_p) || (*cpp_p == '.' && cpp_p + 1 < cpp_e && isdigit((unsigned char)cpp_p[1]))) {
+        char *end; unsigned long long v = strtoull(cpp_p, &end, 0); int u = 0;
+        if (end == cpp_p) { cpp_err = 1; cpp_p++; return r; }
+        cpp_p = end;
+        while (cpp_p < cpp_e && (*cpp_p == 'u' || *cpp_p == 'U' || *cpp_p == 'l' || *cpp_p == 'L')) { if (*cpp_p == 'u' || *cpp_p == 'U') u = 1; cpp_p++; }
+        if (!u && v > (unsigned long long)INTMAX_MAX) u = 1;   /* too big for intmax_t: unsigned (a constant that is */
+        return cpp_mk((intmax_t)v, u);
+    }
+    if (*cpp_p == '\'') {
+        int v = 0;
+        cpp_p++;
+        while (cpp_p < cpp_e && *cpp_p != '\'') { int c = (unsigned char)*cpp_p++; if (c == '\\' && cpp_p < cpp_e) c = cpp_esc(); v = v * 256 + c; }
+        if (cpp_p < cpp_e) cpp_p++; else cpp_err = 1;
+        return cpp_mk((signed char)v, 0);
+    }
+    if (isalpha((unsigned char)*cpp_p) || *cpp_p == '_') { while (cpp_p < cpp_e && (isalnum((unsigned char)*cpp_p) || *cpp_p == '_')) cpp_p++; return r; }
+    cpp_err = 1; cpp_p++;
+    return r;
+}
+static cpp_v cpp_unary(void) {
+    cpp_v r;
+    if (cpp_op("!")) { r = cpp_unary(); return cpp_mk(!r.v, 0); }
+    if (cpp_op("~")) { r = cpp_unary(); return cpp_mk(~r.v, r.u); }
+    if (cpp_op("-")) { r = cpp_unary(); return cpp_mk((intmax_t)(0 - (uintmax_t)r.v), r.u); }
+    if (cpp_op("+")) return cpp_unary();
+    return cpp_primary();
+}
+/* binary operators by precedence, lowest first */
+static const char *const cpp_lv[][6] = {
+    { "||" }, { "&&" }, { "|" }, { "^" }, { "&" }, { "==", "!=" }, { "<=", ">=", "<", ">" }, { "<<", ">>" }, { "+", "-" }, { "*", "/", "%" } };
+/* a << b (left = 1) or a >> b: a negative count shifts the other way, and a count of the width or more shifts everything out (a signed
+   negative value on the right keeps its sign) */
+static intmax_t cpp_shift(cpp_v a, cpp_v b, int left) {
+    uintmax_t n, x = (uintmax_t)a.v;
+    int neg = !b.u && b.v < 0;
+    if (neg) { n = (uintmax_t)0 - (uintmax_t)b.v; left = !left; } else n = (uintmax_t)b.v;
+    if (left) return n >= 64 ? 0 : (intmax_t)(x << (unsigned)n);
+    if (a.u || a.v >= 0) return n >= 64 ? 0 : (intmax_t)(x >> (unsigned)n);
+    return n >= 64 ? -1 : a.v >> (unsigned)n;
+}
+static cpp_v cpp_bin(int lv) {
+    cpp_v a, b;
+    int k;
+    if (lv == 10) return cpp_unary();
+    a = cpp_bin(lv + 1);
+    for (;;) {
+        const char *op = NULL;
+        for (k = 0; k < 6 && cpp_lv[lv][k]; k++)
+            if (cpp_match(cpp_lv[lv][k])) { op = cpp_lv[lv][k]; break; }
+        if (!op) return a;
+        cpp_op(op);
+        if (lv == 0 || lv == 1) {
+            int decided = lv == 0 ? a.v != 0 : a.v == 0;
+            cpp_nev += decided;
+            b = cpp_bin(lv + 1);
+            cpp_nev -= decided;
+            a = cpp_mk(lv == 0 ? (a.v || b.v) : (a.v && b.v), 0);
+            continue;
+        }
+        b = cpp_bin(lv + 1);
+        {
+            int u = a.u || b.u;
+            uintmax_t x = (uintmax_t)a.v, y = (uintmax_t)b.v;
+            switch (op[0]) {
+            case '|': a = cpp_mk((intmax_t)(x | y), u); break;
+            case '^': a = cpp_mk((intmax_t)(x ^ y), u); break;
+            case '&': a = cpp_mk((intmax_t)(x & y), u); break;
+            case '=': a = cpp_mk(u ? x == y : a.v == b.v, 0); break;
+            case '!': a = cpp_mk(u ? x != y : a.v != b.v, 0); break;
+            case '<':
+                if (op[1] == '<') a = cpp_mk(cpp_shift(a, b, 1), a.u);
+                else if (op[1] == '=') a = cpp_mk(u ? x <= y : a.v <= b.v, 0);
+                else a = cpp_mk(u ? x < y : a.v < b.v, 0);
+                break;
+            case '>':
+                if (op[1] == '>') a = cpp_mk(cpp_shift(a, b, 0), a.u);
+                else if (op[1] == '=') a = cpp_mk(u ? x >= y : a.v >= b.v, 0);
+                else a = cpp_mk(u ? x > y : a.v > b.v, 0);
+                break;
+            case '+': a = cpp_mk((intmax_t)(x + y), u); break;
+            case '-': a = cpp_mk((intmax_t)(x - y), u); break;
+            case '*': a = cpp_mk((intmax_t)(x * y), u); break;
+            case '/':
+                if (!b.v) { if (!cpp_nev) cpp_err = 1; a = cpp_mk(0, u); }
+                else a = u ? cpp_mk((intmax_t)(x / y), 1) : cpp_mk(b.v == -1 ? (intmax_t)(0 - x) : a.v / b.v, 0);
+                break;
+            case '%':
+                if (!b.v) { if (!cpp_nev) cpp_err = 1; a = cpp_mk(0, u); }
+                else a = u ? cpp_mk((intmax_t)(x % y), 1) : cpp_mk(b.v == -1 ? 0 : a.v % b.v, 0);
+                break;
+            }
+        }
+    }
+}
+static cpp_v cpp_cond(void) {
+    cpp_v c = cpp_bin(0), a, b;
+    if (cpp_op("?")) {
+        cpp_nev += c.v == 0;
+        a = cpp_comma();
+        cpp_nev -= c.v == 0;
+        if (!cpp_op(":")) cpp_err = 1;
+        cpp_nev += c.v != 0;
+        b = cpp_cond();
+        cpp_nev -= c.v != 0;
+        { int u = a.u || b.u; return cpp_mk(c.v ? a.v : b.v, u); }
+    }
+    return c;
+}
+static cpp_v cpp_comma(void) { cpp_v r = cpp_cond(); while (cpp_op(",")) r = cpp_cond(); return r; }
+/* 1: true, 0: false, -1: not an expression */
+static int cpp_truth(const char *s, size_t n) {
+    cpp_v v;
+    cpp_p = s; cpp_e = s + n; cpp_err = 0; cpp_nev = 0;
+    v = cpp_comma();
+    cpp_ws();
+    if (cpp_err || cpp_p < cpp_e) return -1;
+    return v.v != 0;
+}
+static char *cpp_dup(const char *s, size_t n) { char *r = (char *)malloc(n + 1); memcpy(r, s, n); r[n] = 0; return r; }
+/* `#if e` a `#else` b: the text of the branch that is taken (an expression that is none leaves an #error, as a compiler stops) */
+static char *cpp_pick(const char *e, size_t en, const char *a, size_t an, const char *b, size_t bn) {
+    int t = cpp_truth(e, en);
+    if (t < 0) return cpp_dup("#error invalid #if expression\n", 30);
+    return t ? cpp_dup(a, an) : cpp_dup(b, bn);
+}
+static char *cpp_pick1(const char *e, size_t en, const char *a, size_t an) { return cpp_pick(e, en, a, an, "", 0); }
+}
 include "../../grammars/common.hbnf"
 context defs
 context objs
@@ -38,7 +216,7 @@ rest-of-line    = *( "\\" newline | ~( CR | LF ) ) line-end
 body       = *( "\\" newline | ~( CR | LF ) )
 
 ; a conditional group is replaced by the branch that is taken
-cond = cond-true | cond-false
+cond = cond-true | cond-false | cond-expr
 cond-true  = "#" *HB true-guard line-end *item as A [ "#" *HB "else" line-end skip-group ] "#" *HB "endif" line-end    => A
 cond-false = "#" *HB false-guard line-end skip-group *HB "#" *HB "else" line-end *item as A *HB "#" *HB "endif" line-end       => A
            | "#" *HB false-guard line-end skip-group *HB "#" *HB "endif" line-end                                          => ""
@@ -48,9 +226,29 @@ true-guard  = "ifdef" 1*HB name in defs | "ifndef" 1*HB name not in defs | "if" 
 false-guard = "ifdef" 1*HB name not in defs | "ifndef" 1*HB name in defs | "if" 1*HB "0" !name-char
             | "if" 1*HB "defined" *HB ( "(" *HB name not in defs *HB ")" | name not in defs )
             | "if" 1*HB "!" *HB "defined" *HB ( "(" *HB name in defs *HB ")" | name in defs )
+; `#if` and `#elif` with an expression.  The expression is read as text that is expanded as it goes (a macro is a use like any other, and
+; `defined X` and `defined(X)` are made 1 or 0 where they stand), and cpp_pick evaluates what is left; the branches are read raw, so what a
+; branch that is not taken holds (a #define, a stray quote) has no effect, and the branch that is taken is read again as text.  An `#elif`
+; is an `#else` and an `#if` (the groups after it, to the `#endif`, are read as one, `chain`).
+cond-expr = cond-elif | cond-elif-def | cond-else | cond-plain
+cond-plain = "#" *HB "if" !name-char expr-text as E line-end skip-group as A *HB "#" *HB "endif" line-end                                               => cpp_pick1(E, A)
+cond-else  = "#" *HB "if" !name-char expr-text as E line-end skip-group as A *HB "#" *HB "else" line-end skip-group as B *HB "#" *HB "endif" line-end     => cpp_pick(E, A, B)
+cond-elif  = "#" *HB "if" !name-char expr-text as E line-end skip-group as A *HB "#" *HB "elif" !name-char expr-text as F line-end chain as R *HB "#" *HB "endif" line-end
+                => "#if " E "\n" A "#else\n#if " F "\n" R "#endif\n#endif\n"
+cond-elif-def = "#" *HB ( "ifdef" 1*HB name as N line-end skip-group as A *HB "#" *HB "elif" !name-char expr-text as F line-end chain as R *HB "#" *HB "endif" line-end
+                => "#if defined(" N ")\n" A "#else\n#if " F "\n" R "#endif\n#endif\n" )
+              | "#" *HB "ifndef" 1*HB name as N line-end skip-group as A *HB "#" *HB "elif" !name-char expr-text as F line-end chain as R *HB "#" *HB "endif" line-end
+                => "#if !defined(" N ")\n" A "#else\n#if " F "\n" R "#endif\n#endif\n"
+chain      = skip-group *( *HB "#" *HB ( "elif" | "else" ) !name-char rest-of-line skip-group )
+expr-text  = *( defined-use | comment | line-comment | string-lit | char-lit | pp-number | fun-use | obj-use | name | "\\" newline | ~( CR | LF ) )
+defined-use = "defined" !name-char *HB "(" *HB name in defs *HB ")"       => "1"
+            | "defined" !name-char *HB "(" *HB name not in defs *HB ")"   => "0"
+            | "defined" !name-char 1*HB name in defs                       => "1"
+            | "defined" !name-char 1*HB name not in defs                   => "0"
+
 ; the lines of a branch that is not taken, with the groups inside it, up to its #else or #endif
 skip-group  = *( skip-nested | skip-line )
-skip-nested = *HB "#" *HB ( "ifndef" | "ifdef" | "if" ) !name-char rest-of-line skip-group [ *HB "#" *HB "else" !name-char rest-of-line skip-group ] *HB "#" *HB "endif" !name-char rest-of-line
+skip-nested = *HB "#" *HB ( "ifndef" | "ifdef" | "if" ) !name-char rest-of-line chain *HB "#" *HB "endif" !name-char rest-of-line
 skip-line   = *HB newline | *HB ~( "#" | CR | LF | " " | HTAB ) rest-of-line | *HB "#" *HB ( directive-word rest-of-line | "define" !name-char rest-of-line | "undef" !name-char rest-of-line | line-end )
 
 ; the tokens

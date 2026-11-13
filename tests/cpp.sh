@@ -58,7 +58,7 @@ for f in tests/cpp/*.c; do
 	[ "$got" = ok ] || { echo "cpp: FAIL ($f: the C99 grammar does not read the expanded text: $("$W/c99" "$W/out.c" 2>&1 | head -c 200))"; fail=1; }
 done
 # the same grammar with `=>>` (rewrites that rewind: the parse is read again from the start) gives the same tokens: only the work differs
-sed 's/ => N\.body/ =>> N.body/; s/ => A$/ =>> A/; s/ => ""$/ =>> ""/; s|include "../../grammars/common.hbnf"|include "'"$(pwd)"'/grammars/common.hbnf"|' corpus/c/cpp.hbnf > "$W/cpp-rewind.hbnf"
+sed '/^;/! s/ => / =>> /; /^;/! s/^\( *\)=> /\1=>> /; s|include "../../grammars/common.hbnf"|include "'"$(pwd)"'/grammars/common.hbnf"|' corpus/c/cpp.hbnf > "$W/cpp-rewind.hbnf"
 "$CLI" "$W/cpp-rewind.hbnf" --backend=c > "$W/rw.c" 2> "$W/err"
 if [ -s "$W/rw.c" ] && grep -q 'hbnf_reread (.*, 0);' "$W/rw.c"; then
 	cat "$W/rw.c" "$W/main.c" > "$W/rwm.c"
@@ -69,7 +69,21 @@ if [ -s "$W/rw.c" ] && grep -q 'hbnf_reread (.*, 0);' "$W/rw.c"; then
 		cmp -s "${f%.c}.expected" "$W/o2.txt" || { echo "cpp: FAIL ($f: =>> does not give gcc's tokens either)"; fail=1; }
 	done
 else echo "cpp: FAIL (the =>> variant does not generate: $(head -c 300 "$W/err"))"; fail=1; fi
-# what the grammar does not read yet is refused, not passed on
-printf '#if X > 3\nint a;\n#endif\n' > "$W/u.c"
-n=$((n + 1)); "$W/pp" "$W/u.c" > /dev/null 2>&1 && { echo "cpp: FAIL (#if with an expression is not refused)"; fail=1; }
-[ $fail -eq 0 ] && echo "cpp: OK ($n checks: macros and conditional groups expanded as gcc -E -P does, and the result read by the C99 grammar)" || exit 1
+# an expression that is none is left as an #error, as a compiler stops (and a division by zero that is evaluated is one; one that is not is not)
+printf '#if 1 +\nint a;\n#endif\n#if 1 / 0\nint b;\n#endif\n#if 1 || 1 / 0\nint c;\n#endif\n' > "$W/u.c"
+n=$((n + 1)); "$W/pp" "$W/u.c" > "$W/u.out" 2>&1
+[ "$(grep -c '#error invalid #if expression' "$W/u.out")" = 2 ] && grep -q 'int c;' "$W/u.out" && ! grep -q 'int a;\|int b;' "$W/u.out" \
+	|| { echo "cpp: FAIL (a bad #if expression is not left as an #error, or the short circuit evaluates its right side)"; fail=1; }
+# random #if and #elif programs, against gcc (where installed): 300 files of 3 groups; the ones gcc itself refuses are left out
+if command -v gcc > /dev/null 2>&1; then
+	mkdir -p "$W/fz"; python3 tools/cpp_fuzz.py 7 300 "$W/fz" 3
+	ok_=0; skip_=0
+	for f in "$W"/fz/*.c; do
+		gcc -E -P -w -undef -nostdinc "$f" > "$W/fg.out" 2> /dev/null || { skip_=$((skip_ + 1)); continue; }
+		python3 tools/cpp_tokens.py < "$W/fg.out" > "$W/fg.tok"
+		"$W/pp" "$f" 2> /dev/null | python3 tools/cpp_tokens.py > "$W/fo.tok"
+		if cmp -s "$W/fg.tok" "$W/fo.tok"; then ok_=$((ok_ + 1)); else echo "cpp: FAIL (fuzz: $f is not read as gcc reads it)"; cp "$f" "$W/../cpp-fuzz-fail.c" 2> /dev/null; fail=1; fi
+	done
+	n=$((n + ok_))
+fi
+[ $fail -eq 0 ] && echo "cpp: OK ($n checks: macros, #if / #elif expressions and conditional groups expanded as gcc -E -P does (and 300 random #if files), and the result read by the C99 grammar)" || exit 1

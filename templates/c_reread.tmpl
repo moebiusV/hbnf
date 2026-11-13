@@ -40,6 +40,9 @@ static hbnf_rr_rec *hbnf_rr_log;  static size_t hbnf_rr_nlog, hbnf_rr_caplog;
 static const char *hbnf_rr_orig;
 static const char *hbnf_rr_rule_;            /* the rule that asked for the rewrite waiting to be made */
 static void hbnf_reread(size_t s, size_t e, hbnf_sb *b, const char *rule, int cont) {
+    /* a rewrite is waiting already: the rest of the rules, reading the text as cut short, try again and come to the same place; the first
+       request is the one that counts */
+    if (hbnf_rr) { free(b->s);  return; }
     hbnf_rr = 1;  hbnf_rr_cont = cont;  hbnf_rr_s = s;  hbnf_rr_e = e;  hbnf_rr_rule_ = rule;
     free(hbnf_rr_t);
     hbnf_rr_t = b->s ? b->s : strdup("");
