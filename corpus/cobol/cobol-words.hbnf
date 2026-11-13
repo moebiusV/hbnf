@@ -56,3 +56,10 @@ entry-word        = nonnumeric-literal | r"[^ \t\r\n.]+"
 
 ; The name of an intrinsic function: any word, reserved or not (`FUNCTION LENGTH (X)`).
 function-name    = ALNUM *wordchar
+
+; the tokens of COPY and REPLACE: the name of a library, an operand of REPLACING (a word, a literal, or pseudo-text between ==
+; and ==, whose blanks are kept as they are), as tokens like the others
+text-name         = nonnumeric-literal | word
+replacing-operand = pseudo-text | nonnumeric-literal | operand-word
+pseudo-text       = "==" *( !"==" OCTET ) "=="
+operand-word      = 1*~( SP | HTAB | CR | LF | "." )

@@ -1524,6 +1524,10 @@ package body HBNF_Lookahead is
       Enable : Boolean := True) return Plan
    is
       Hi : constant Natural := (if To = 0 then Natural (V.Last_Index) else To);
+      --  A rewrite (`=> template`) replaces the text from where its alternative began; read once for several alternatives,
+      --  the front they share would be left out of what it replaces
+      No_Rewrite : constant Boolean :=
+        not (for some I in From .. Hi => V (I).Kind = Block and then V (I).Op = B_Reread);
       Bs : Bounds_Vectors.Vector;
       type Item is record
          First, Last, Br : Natural;
@@ -1569,7 +1573,7 @@ package body HBNF_Lookahead is
                J : Natural := I;
                M : Natural := 0;
             begin
-               if Factoring and then Enable and then I < N and then not Guarded (Items (I).Br)
+               if Factoring and then Enable and then No_Rewrite and then I < N and then not Guarded (Items (I).Br)
                  and then not Guarded (Items (I + 1).Br)
                  and then Shared (Items (I), Items (I + 1)) >= 1
                then

@@ -5,8 +5,8 @@
 ; stop a list of operands, and no scope terminator is ever guessed.  Which names the data division declares is
 ; for a checking pass: a bare operand after AND or OR is an abbreviated condition (`A > B AND C`) or the
 ; name of a level-88 condition, and the parser does not tell them apart (the tree has one node for both).
-; Not yet: fixed format (the sequence area, the indicator column, continuation lines), COPY and REPLACE,
-; object orientation.
+; Not yet: object orientation.  COPY and REPLACE are read as statements here and the text is left as it stands;
+; cobol-copy.hbnf (C backend) makes them rewrites.
 prefix none
 sensitivity string %i
 include "cobol-words.hbnf"
@@ -84,7 +84,7 @@ switch-or-device-name   = user-word
 
 input-output-section    = "INPUT-OUTPUT" "SECTION" "." [ file-control-paragraph ] [ i-o-control-paragraph ]
 file-control-paragraph  = "FILE-CONTROL" "." *file-control-entry
-file-control-entry      = "SELECT" [ "OPTIONAL" ] file-name 1*select-clause "."
+file-control-entry      = copy-statement | "SELECT" [ "OPTIONAL" ] file-name 1*select-clause "."
 select-clause           = "ASSIGN" ( "USING" identifier | to "VARYING" identifier | to 1*( device-name | assign-name ) [ ( "USING" | "FROM" ) identifier ] )
                         | "RELATIVE" key is identifier
                         | "ACTUAL" key is identifier
@@ -167,7 +167,8 @@ report-type             = "REPORT" "HEADING" | "RH" | "PAGE" "HEADING" | "PH" | 
                         | "DETAIL" | "DE" | "CONTROL" "FOOTING" control-list | "CF" control-list
                         | "PAGE" "FOOTING" | "PF" | "REPORT" "FOOTING" | "RF"
 special-names-clause = is "SPECIAL-NAMES" ( "CURSOR" | "CRT" "STATUS" )
-data-description-entry = "66" data-name renames-clause "."
+data-description-entry = copy-statement
+                       | "66" data-name renames-clause "."
                        | "88" [ data-name ] 1*value-clause(condition-value) [ ( "IS" | "ARE" ) ( "VALID" | "INVALID" ) [ "WHEN" condition ] ] "."
                        | "78" data-name *plain-clause "."
                        | plain-level [ data-name | "FILLER" ] any of ( special-names-clause volatile-clause same-as-clause picture-clause usage-clause value-clause(value-item)
@@ -249,7 +250,7 @@ end-of-unit            = "END" ( "PROGRAM" | "FUNCTION" )
 statements             = 1*statement
 
 ; ---- statements ----
-statement = transform-statement | validate-statement | xml-statement | json-statement | ready-statement | accept-statement | add-statement | alter-statement | call-statement | cancel-statement | close-statement
+statement = copy-statement | replace-statement | transform-statement | validate-statement | xml-statement | json-statement | ready-statement | accept-statement | add-statement | alter-statement | call-statement | cancel-statement | close-statement
           | compute-statement | continue-statement | delete-statement | display-message | display-statement | divide-statement
           | evaluate-statement | exit-statement | goback-statement | go-to-statement | if-statement
           | initialize-statement | inspect-statement | move-statement | multiply-statement | open-statement
@@ -428,3 +429,10 @@ relation-operator = is [ "NOT" ] comparison
 comparison     = ">=" | "<=" | "<>" | ">" | "<" | "="
                | "GREATER" [ "THAN" ] [ "OR" ( "EQUALS" | "EQUAL" to ) ] | "LESS" [ "THAN" ] [ "OR" ( "EQUALS" | "EQUAL" to ) ]
                | ( "EQUALS" | "EQUAL" ) to | "NOT" ( ">" | "<" | "=" )
+
+; COPY and REPLACE (the text-manipulation statements): read as statements, in the places a data entry, a file entry or a statement
+; may stand.  cobol-copy.hbnf redefines copy-statement and replace-statement to do what they say.
+copy-statement    = "COPY" text-name [ copy-library ] [ "SUPPRESS" ] [ "REPLACING" 1*replacing-pair ] "."
+replace-statement = "REPLACE" ( "OFF" | [ "LAST" ] 1*replacing-pair ) "."
+copy-library      = ( "OF" | "IN" ) text-name
+replacing-pair    = [ "LEADING" | "TRAILING" ] replacing-operand "BY" replacing-operand

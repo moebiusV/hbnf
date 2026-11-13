@@ -5860,10 +5860,24 @@ package body HBNF_Grammar is
                         while E <= T'Last and then T (E) /= ')' loop
                            E := E + 1;
                         end loop;
-                        if E > T'Last or else not Tag_Bound (Trim_Blanks (T (K + 1 .. E - 1))) then
-                           Fail (Where & "`=> " & Item & "`: `" & T (S .. K - 1)
-                                 & "(...)` takes a tag kept earlier in this alternative with `as`");
+                        if E > T'Last then
+                           Fail (Where & "`=> " & Item & "`: `" & T (S .. K - 1) & "(` is not closed");
                         end if;
+                        --  one tag, or several, with commas: `copy_text(N, R)`
+                        declare
+                           A : constant String := T (K + 1 .. E - 1);
+                           B : Natural := A'First;
+                        begin
+                           for Q in A'First .. A'Last + 1 loop
+                              if Q > A'Last or else A (Q) = ',' then
+                                 if not Tag_Bound (Trim_Blanks (A (B .. Q - 1))) then
+                                    Fail (Where & "`=> " & Item & "`: `" & T (S .. K - 1)
+                                          & "(...)` takes tags kept earlier in this alternative with `as`");
+                                 end if;
+                                 B := Q + 1;
+                              end if;
+                           end loop;
+                        end;
                         K := E + 1;
                      end;
                   elsif Find_Outside (T (S .. K - 1), ".") > 0 then

@@ -6430,8 +6430,20 @@ package body HBNF_C is
                            end loop;
                            declare
                               Arg : constant String := Ada.Strings.Fixed.Trim (T (K + 1 .. E - 1), Ada.Strings.Both);
+                              Args : Unbounded_String;
+                              B    : Natural := Arg'First;
                            begin
-                              Append (R, Ind & "{ char *r_ = " & T (S0 .. K - 1) & " (" & Tg (Arg)
+                              --  one tag, or several (`f(N, R)`): each is a pointer and a length
+                              for Q in Arg'First .. Arg'Last + 1 loop
+                                 if Q > Arg'Last or else Arg (Q) = ',' then
+                                    if Length (Args) > 0 then
+                                       Append (Args, ", ");
+                                    end if;
+                                    Append (Args, Tg (Ada.Strings.Fixed.Trim (Arg (B .. Q - 1), Ada.Strings.Both)));
+                                    B := Q + 1;
+                                 end if;
+                              end loop;
+                              Append (R, Ind & "{ char *r_ = " & T (S0 .. K - 1) & " (" & To_String (Args)
                                 & "); if (r_) { hbnf_sb_adds (&sb_, r_); free (r_); } }" & LF);
                            end;
                            K := E + 1;

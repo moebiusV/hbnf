@@ -1,0 +1,178 @@
+; COBOL with COPY and REPLACE read (the source stack, first slice, C backend only: it has native code).
+; cobol.hbnf reads COPY and REPLACE as statements and leaves the text alone; here each of them is a rewrite, `=>`: the text
+; of the library file (with REPLACING applied) takes the place of the COPY statement, the text after a REPLACE statement
+; (up to the next REPLACE) is made with its pairs applied, and the grammar reads again from the start of what was replaced
+; (CONTEXTS section 30, the source stack).  The library is found by name in the working directory and in the directories of
+; COBCPY (separated by colons), as name, name.cpy, .cbl, .cob or .copy, and in the upper and lower case of the name.
+;   hbnf corpus/cobol/cobol-copy.hbnf --root=compilation-group --backend=c
+prefix none
+sensitivity string %i
+{
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+#include <string.h>
+#include <ctype.h>
+#include <strings.h>
+
+/* the text of a library file; NULL if it is not found */
+static char *cob_slurp(const char *path) {
+    FILE *f = fopen(path, "rb");
+    char *b; long n;
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END); n = ftell(f); fseek(f, 0, SEEK_SET);
+    b = (char *)malloc((size_t)n + 1);
+    if (fread(b, 1, (size_t)n, f) != (size_t)n) { /* short read: what was read is the text */ }
+    b[n] = 0; fclose(f);
+    return b;
+}
+static char *cob_find_copy(const char *name, size_t n) {
+    static const char *ext[] = { "", ".cpy", ".cbl", ".cob", ".copy", NULL };
+    char base[256], path[1024], dirs[1024];
+    const char *env = getenv("COBCPY");
+    char *dir, *save = NULL;
+    size_t i; int e, cs;
+    if (n >= 2 && (name[0] == '"' || name[0] == '\'')) { name++; n -= 2; }
+    if (n >= sizeof base) n = sizeof base - 1;
+    memcpy(base, name, n); base[n] = 0;
+    snprintf(dirs, sizeof dirs, ".:%s", env ? env : "");
+    for (dir = strtok_r(dirs, ":", &save); dir; dir = strtok_r(NULL, ":", &save)) {
+        for (cs = 0; cs < 3; cs++) {
+            char nm[256];
+            for (i = 0; i <= n; i++) nm[i] = cs == 1 ? (char)toupper((unsigned char)base[i]) : cs == 2 ? (char)tolower((unsigned char)base[i]) : base[i];
+            for (e = 0; ext[e]; e++) {
+                char *t;
+                snprintf(path, sizeof path, "%s/%s%s", dir, nm, ext[e]);
+                if ((t = cob_slurp(path)) != NULL) return t;
+            }
+        }
+    }
+    return NULL;
+}
+
+/* one pair of REPLACING: what to find (text words separated by one blank), what to put, and whether LEADING (1) or TRAILING (2) */
+typedef struct { char *from, *to; int mode; } CobPair;
+static int cob_isword(int c) { return isalnum(c) || c == '-' || c == '_'; }
+static char *cob_dup(const char *s, size_t n) { char *r = (char *)malloc(n + 1); memcpy(r, s, n); r[n] = 0; return r; }
+/* the operand at s: pseudo-text ==...== (its words one blank apart, its edges trimmed) or one word or literal */
+static const char *cob_operand(const char *s, const char *end, char **out) {
+    size_t k = 0; char *r;
+    while (s < end && isspace((unsigned char)*s)) s++;
+    if (s + 1 < end && s[0] == '=' && s[1] == '=') {
+        const char *p = s + 2; int gap = 0;
+        r = (char *)malloc((size_t)(end - s) + 1);
+        while (p + 1 < end && !(p[0] == '=' && p[1] == '=')) {
+            if (isspace((unsigned char)*p)) { gap = k > 0; p++; continue; }
+            if (gap) { r[k++] = ' '; gap = 0; }
+            r[k++] = *p++;
+        }
+        r[k] = 0; *out = r;
+        return p + 2 <= end ? p + 2 : end;
+    }
+    {
+        const char *p = s; char q = (*p == '"' || *p == '\'') ? *p : 0;
+        if (q) { p++; while (p < end && *p != q) p++; if (p < end) p++; }
+        else while (p < end && !isspace((unsigned char)*p)) p++;
+        *out = cob_dup(s, (size_t)(p - s));
+        return p;
+    }
+}
+static int cob_pairs(const char *s, size_t n, CobPair *v, int max) {
+    const char *end = s + n; int k = 0;
+    for (;;) {
+        char *w; const char *p; int mode = 0;
+        while (s < end && (isspace((unsigned char)*s) || *s == ',')) s++;
+        if (s >= end || k >= max) break;
+        if (end - s >= 7 && strncasecmp(s, "LEADING", 7) == 0 && isspace((unsigned char)s[7])) { mode = 1; s += 7; }
+        else if (end - s >= 8 && strncasecmp(s, "TRAILING", 8) == 0 && isspace((unsigned char)s[8])) { mode = 2; s += 8; }
+        p = cob_operand(s, end, &w);
+        v[k].from = w; v[k].mode = mode;
+        while (p < end && isspace((unsigned char)*p)) p++;
+        if (end - p >= 2 && strncasecmp(p, "BY", 2) == 0) p += 2;
+        p = cob_operand(p, end, &w);
+        v[k].to = w; s = p; k++;
+    }
+    return k;
+}
+/* does the pair match at t[i..]? and how long is the match */
+static long cob_match(const char *t, size_t tn, size_t i, const CobPair *pr) {
+    const char *f = pr->from; size_t j = i;
+    int wl = cob_isword((unsigned char)f[0]), wr;
+    size_t fl = strlen(f);
+    if (pr->mode != 1 && wl && i > 0 && cob_isword((unsigned char)t[i - 1])) return -1;
+    if (pr->mode == 1 && wl && i > 0 && cob_isword((unsigned char)t[i - 1])) return -1;
+    while (*f) {
+        if (*f == ' ') {
+            if (j >= tn || !isspace((unsigned char)t[j])) return -1;
+            while (j < tn && isspace((unsigned char)t[j])) j++;
+            f++;
+        } else {
+            if (j >= tn || toupper((unsigned char)t[j]) != toupper((unsigned char)*f)) return -1;
+            j++; f++;
+        }
+    }
+    wr = cob_isword((unsigned char)pr->from[fl - 1]);
+    if (pr->mode == 0 && wr && j < tn && cob_isword((unsigned char)t[j])) return -1;
+    if (pr->mode == 1) { while (j < tn && cob_isword((unsigned char)t[j])) j++; return (long)(j - i); }
+    return (long)(j - i);
+}
+/* the text with each pair applied, in order, to its text words; literals and comments are copied as they stand */
+static char *cob_replace(const char *t, size_t tn, const char *pairs, size_t pn) {
+    CobPair v[64]; int np = cob_pairs(pairs, pn, v, 64), k;
+    size_t cap = tn * 2 + 64, n = 0, i = 0; char *r = (char *)malloc(cap);
+    while (i < tn) {
+        long m = -1; int hit = -1;
+        for (k = 0; k < np && m < 0; k++) {
+            if (v[k].mode == 2) {
+                /* TRAILING: the end of a word is the pair's text */
+                size_t fl = strlen(v[k].from);
+                if (i + fl <= tn && strncasecmp(t + i, v[k].from, fl) == 0 && (i + fl == tn || !cob_isword((unsigned char)t[i + fl])) && i > 0 && cob_isword((unsigned char)t[i - 1])) { m = (long)fl; hit = k; }
+            } else if ((m = cob_match(t, tn, i, &v[k])) >= 0) hit = k;
+        }
+        if (n + (m >= 0 ? strlen(v[hit].to) : 2) + 2 >= cap) { cap = cap * 2 + strlen(m >= 0 ? v[hit].to : "") + 64; r = (char *)realloc(r, cap); }
+        if (m >= 0) {
+            if (v[hit].mode == 1) { size_t fl = strlen(v[hit].from); size_t tl = strlen(v[hit].to); memcpy(r + n, v[hit].to, tl); n += tl; if ((size_t)m > fl) { memcpy(r + n, t + i + fl, (size_t)m - fl); n += (size_t)m - fl; } }
+            else { size_t tl = strlen(v[hit].to); memcpy(r + n, v[hit].to, tl); n += tl; }
+            i += (size_t)(m > 0 ? m : 1);
+        } else if (t[i] == '"' || t[i] == '\'') {
+            char q = t[i]; size_t e = i + 1;
+            while (e < tn && t[e] != q) e++;
+            if (e < tn) e++;
+            if (n + (e - i) + 2 >= cap) { cap = cap * 2 + (e - i) + 64; r = (char *)realloc(r, cap); }
+            memcpy(r + n, t + i, e - i); n += e - i; i = e;
+        } else if (t[i] == '*' && i + 1 < tn && t[i + 1] == '>') {
+            size_t e = i; while (e < tn && t[e] != '\n') e++;
+            if (n + (e - i) + 2 >= cap) { cap = cap * 2 + (e - i) + 64; r = (char *)realloc(r, cap); }
+            memcpy(r + n, t + i, e - i); n += e - i; i = e;
+        } else r[n++] = t[i++];
+    }
+    r[n] = 0;
+    for (k = 0; k < np; k++) { free(v[k].from); free(v[k].to); }
+    return r;
+}
+/* COPY name. : the library text */
+static char *copy_file(const char *s, size_t n) {
+    char *t = cob_find_copy(s, n);
+    return t ? t : cob_dup(" ", 1);
+}
+/* COPY name REPLACING pairs. */
+static char *copy_text(const char *s, size_t n, const char *r, size_t rn) {
+    char *t = cob_find_copy(s, n), *o;
+    if (!t) return cob_dup(" ", 1);
+    o = cob_replace(t, strlen(t), r, rn);
+    free(t);
+    return o;
+}
+/* REPLACE pairs. rest : the rest of the text, up to the next REPLACE, made with the pairs */
+static char *replace_text(const char *r, size_t rn, const char *t, size_t tn) {
+    return cob_replace(t, tn, r, rn);
+}
+}
+
+include "cobol.hbnf"
+
+copy-statement = "COPY" text-name as N [ copy-library ] [ "SUPPRESS" ] "REPLACING" 1*replacing-pair as R "."      => copy_text(N, R)
+               | "COPY" text-name as N [ copy-library ] [ "SUPPRESS" ] "."                                       => copy_file(N)
+replace-statement = "REPLACE" "OFF" "."
+                  | "REPLACE" [ "LAST" ] 1*replacing-pair as R "." replace-rest as T                             => replace_text(R, T)
+replace-rest   = *( !"REPLACE" OCTET )

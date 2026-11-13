@@ -72,6 +72,18 @@ now it parses the rule where it stands and puts everything back, in all four bac
 case-insensitive literal in a rule of characters was one branch for each of its spellings, so a word of more
 than four letters could not be one; each letter is now both its cases at one position, and a word is one branch.
 
+## COPY and REPLACE (the source stack, first slice)
+
+`cobol.hbnf` reads `COPY name [OF lib] [SUPPRESS] [REPLACING ...].` and `REPLACE ... .` as statements (where a data entry, a file entry or a
+statement may stand) and leaves the text as it stands.  `cobol-copy.hbnf` includes it and makes both of them rewrites (`=>`, CONTEXTS section 30):
+the text of the library, with REPLACING applied (pseudo-text `==a== BY ==b==`, a word, a literal, `LEADING`, `TRAILING`), takes the place of the
+statement and the grammar reads again from the start; the text after a `REPLACE` statement up to the next `REPLACE` (or `REPLACE OFF.`) is made with
+its pairs applied.  The library is found by name in the working directory and in the directories of the environment variable `COBCPY`, as the name
+or with `.cpy`, `.cbl`, `.cob`, `.copy`.  It has native code (about 150 lines of C: finding the file, and the substitution), so the C backend only;
+`tests/cobol-copy.sh` has 17 programs, each read only if the substitution was made.  Not yet: a COPY between any two tokens (it is a statement
+here, so in the places above only), a library that is not found is an empty text and not an error, REPLACE in the middle of a statement, the
+fixed format (`cobol-fixed.hbnf` with it), and the chain of an error inside a library naming the library file.
+
 ## The gaps that are left (2026-11-13)
 
 What cobc accepts and the parser refuses, by the scan (`tests/cobol-scan.sh`; the baselines are 2 in free format, 0 for NIST in free
