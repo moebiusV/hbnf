@@ -1,0 +1,12 @@
+ok	#define PI 3;PI+PI;
+bad	PI;
+ok	#define TWO 2;#define FOUR TWO+TWO;FOUR;
+ok	#define ADD(a,b) a+b;ADD(1,2);
+bad	#define ADD(a,b) a+b;ADD(1,TWO);
+ok	#define TWO 2;#define ADD(a,b) a+b;ADD(1,TWO);
+bad	#define BAD 3+;BAD;
+ok	#define SQ(x) x+x;SQ(2);
+bad	PI;#define PI 3;
+ok	#define PI 3;#define PI 4;PI;
+ok	#define ONE 1;1+ONE+ONE+ONE;
+ok	#define F(x) x;F(7);F(8);

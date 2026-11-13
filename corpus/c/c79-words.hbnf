@@ -48,7 +48,7 @@ op-assign  = ( "*" | "/" | "%" | "+" | "-" | "<<" | ">>" | "&" | "|" | "^" ) "="
 ; `asm ( "text" )` (its letters are code points, as a keyword would be a whole word), which the lexer reads and hands the assembler, so the parser never sees it.
 blank      = SP | HTAB | LF | CR | 0x08 | 0x0C
 comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
-pp-line    = "#" *~LF
+pp-line    = "#" *( "\\" ( CR LF | LF ) | ~LF )
 asm-char   = ~( DQUOTE | LF )
 asm-text   = 0x61 0x73 0x6D *blank "(" *blank DQUOTE *asm-char DQUOTE *blank ")"
 ws         = 1*( blank | comment | pp-line | asm-text )

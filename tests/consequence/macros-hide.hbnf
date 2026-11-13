@@ -1,0 +1,24 @@
+; macros.hbnf with the standard's rule that a macro is not expanded inside its own expansion (`hiding N`, `x not in hidden`; C only): a macro that
+; uses itself, or two that use each other, are not read again and again, and what is left of them is no number.
+; `=> template`: the match is replaced by the template and the parse is read again (CONTEXTS section 30).  A
+; definition makes facts about a name (`N.params`, `N.body`); a use is rewritten to its body, with the parameters
+; replaced by the arguments.  The language reads only numbers, names that are macros, and `+`, so a text is read
+; only if its macros expand to numbers.
+prefix none
+context macros
+whitespace none
+
+doc       = *stmt
+stmt      = define | expr ";"
+define    = "#define" SP name as N params-part as P SP body as B ";"
+                                         => macros += N, N.params = P, N.body = B
+expr      = term *( "+" term )
+term      = macro-use | number
+macro-use = name in macros not in hidden as N args-part as A
+                                         => N.body with N.params = A hiding N
+params-part = [ "(" *~")" ")" ]
+args-part   = [ "(" *~")" ")" ]
+body      = *~";"
+name      = 1*0x41..0x5A
+number    = 1*0x30..0x39
+SP        = " "

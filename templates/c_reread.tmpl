@@ -1,9 +1,11 @@
-/* ---- rewrites: `=> template` replaces the text a match stands for and the parse is read again (CONTEXTS.md section 30) ----
-   The template is built in a buffer (hbnf_sb); hbnf_reread notes where the match was and what replaces it, and
-   parse_text splices the new text in and starts the parse over on it: what was read before the match is the same,
-   a definition that made a fact makes it again, and a use that was replaced is no longer there to match.  The
-   tree of a parse that is started over is dropped; the text of the last one is kept (the tree's strings are slices
-   of it) until the next parse_text. */
+/* ---- rewrites: `=> template` replaces the text a match stands for (CONTEXTS.md section 30) ----
+   The template is built in a buffer (hbnf_sb); hbnf_reread notes where the match was and what replaces it.
+   `=>` goes on reading: the outermost rule that began where the replaced text began (hbnf_rr_mine) splices the new text in
+   (hbnf_rr_apply: in place, the text before it does not move) and reads it again from its first alternative, with the contexts and
+   facts as they are; the strings of the tree are slices of the text, which is kept until the next parse_text.
+   `=>>` rewinds: parse_text splices the new text in and starts the parse over on it, so what was read before the match is
+   read again, a definition that made a fact makes it again, and a use that was replaced is no longer there to match; the tree
+   of a parse that is started over is dropped.  It is the work `=>` does not do, and no grammar of the standards needs it. */
 typedef struct { char *s; size_t n, cap; } hbnf_sb;
 static void hbnf_sb_add(hbnf_sb *b, const char *s, size_t n) {
     if (b->n + n + 1 > b->cap) {
@@ -15,12 +17,20 @@ static void hbnf_sb_add(hbnf_sb *b, const char *s, size_t n) {
 }
 static void hbnf_sb_adds(hbnf_sb *b, const char *s) { hbnf_sb_add(b, s, strlen(s)); }
 #ifndef HBNF_MAX_REREAD
-#define HBNF_MAX_REREAD 100000      /* rewrites in one parse: a rewrite that never ends stops here */
+#define HBNF_MAX_REREAD 0           /* rewrites in one parse; 0: no limit (-DHBNF_MAX_REREAD=n stops a rewrite that never ends at n) */
 #endif
-static int hbnf_rr;                           /* a rewrite asked for the parse to start over */
+static int hbnf_rr;                           /* a rewrite is waiting to be made */
+static int hbnf_rr_cont;                      /* ... and it goes on reading where the text it replaces began (`=>`); 0: the parse starts over (`=>>`) */
+static size_t hbnf_rr_len0;                   /* the length of the text before it, which the parser was made to see as cut short */
+static unsigned hbnf_rd;                      /* the rules being read, and where each began: a continuing rewrite is made by the outermost one */
+static size_t hbnf_rs[4096 + 8];
 static size_t hbnf_rr_s, hbnf_rr_e;           /* the text it replaces: [s, e) */
 static char *hbnf_rr_t;  static size_t hbnf_rr_tn;   /* and what it replaces it with */
 static unsigned hbnf_rr_n;                    /* rewrites made in this parse */
+#ifndef HBNF_MAX_REWORK
+#define HBNF_MAX_REWORK 0           /* bytes a parse reads again (`=>>`) or moves (`=>`) because of rewrites; 0: no limit (-DHBNF_MAX_REWORK=n) */
+#endif
+static size_t hbnf_rr_work;
 static char *hbnf_rr_buf;                     /* the text of the last rewrite */
 /* The chain of rewrites, so that an error is reported against the text the user wrote (CONTEXTS.md section 30, R591): each
    splice is logged with where its text stands in the text it made, where the text it replaced stood in the text before, and
@@ -29,8 +39,8 @@ typedef struct { size_t ns, nlen, os, oe; const char *rule; } hbnf_rr_rec;
 static hbnf_rr_rec *hbnf_rr_log;  static size_t hbnf_rr_nlog, hbnf_rr_caplog;
 static const char *hbnf_rr_orig;
 static const char *hbnf_rr_rule_;            /* the rule that asked for the rewrite waiting to be made */
-static void hbnf_reread(size_t s, size_t e, hbnf_sb *b, const char *rule) {
-    hbnf_rr = 1;  hbnf_rr_s = s;  hbnf_rr_e = e;  hbnf_rr_rule_ = rule;
+static void hbnf_reread(size_t s, size_t e, hbnf_sb *b, const char *rule, int cont) {
+    hbnf_rr = 1;  hbnf_rr_cont = cont;  hbnf_rr_s = s;  hbnf_rr_e = e;  hbnf_rr_rule_ = rule;
     free(hbnf_rr_t);
     hbnf_rr_t = b->s ? b->s : strdup("");
     hbnf_rr_tn = b->n;
@@ -41,7 +51,56 @@ static void hbnf_reread(size_t s, size_t e, hbnf_sb *b, const char *rule) {
 #define HBNF_MAX_TREE_DEPTH 200
 #endif
 static unsigned hbnf_td;
-static void hbnf_reread_clear(void) { hbnf_rr = 0;  hbnf_rr_n = 0;  hbnf_rr_buf = NULL;  hbnf_td = 0;  hbnf_rr_nlog = 0;  hbnf_rr_orig = NULL; }
+/* `=> ... hiding N`: where a rewrite made text, the name N is not read again by `x not in hidden` (a macro is not expanded in its own
+   expansion, which would never end).  A place is a range of the text, and moves with it as later rewrites change the text before it. */
+typedef struct { size_t s, e; char *name; size_t nlen; } hbnf_hide_t;
+static hbnf_hide_t *hbnf_hide;  static size_t hbnf_nhide, hbnf_caphide;
+static char *hbnf_rr_hn;  static size_t hbnf_rr_hnl;     /* the name the rewrite waiting to be made hides, copied */
+static void hbnf_rr_hide(const char *s, size_t n) {
+    free(hbnf_rr_hn);  hbnf_rr_hn = (char *)malloc(n + 1);
+    if (!hbnf_rr_hn) hbnf_oom();
+    memcpy(hbnf_rr_hn, s, n);  hbnf_rr_hn[n] = 0;  hbnf_rr_hnl = n;
+}
+static int hbnf_hidden(const parser_t *p, size_t pos, size_t len) {
+    size_t i;
+    for (i = 0; i < hbnf_nhide; i++)
+        if (hbnf_hide[i].s <= pos && pos < hbnf_hide[i].e && hbnf_hide[i].nlen == len && memcmp(p->text + pos, hbnf_hide[i].name, len) == 0) return 1;
+    return 0;
+}
+/* a rewrite replaced [s, e) by tn bytes: the places move with the text, a place the replaced text is inside grows or shrinks with it, and
+   a place that was in the replaced text, or that the parse has gone past (when it goes on: it does not come back), is dropped */
+static void hbnf_hide_move(size_t s, size_t e, size_t tn, int cont) {
+    size_t i, k = 0;
+    for (i = 0; i < hbnf_nhide; i++) {
+        hbnf_hide_t h = hbnf_hide[i];
+        if (h.s >= e) { h.s = h.s - (e - s) + tn;  h.e = h.e - (e - s) + tn; }
+        else if (h.s <= s && e <= h.e) h.e = h.e - (e - s) + tn;
+        else if (h.e <= s) { if (cont) { free(h.name); continue; } }
+        else { free(h.name); continue; }
+        hbnf_hide[k++] = h;
+    }
+    hbnf_nhide = k;
+    if (hbnf_rr_hn) {
+        if (hbnf_nhide == hbnf_caphide) {
+            hbnf_caphide = hbnf_caphide ? hbnf_caphide * 2 : 16;
+            hbnf_hide = (hbnf_hide_t *)realloc(hbnf_hide, hbnf_caphide * sizeof *hbnf_hide);
+            if (!hbnf_hide) hbnf_oom();
+        }
+        hbnf_hide[hbnf_nhide].s = s;  hbnf_hide[hbnf_nhide].e = s + tn;
+        hbnf_hide[hbnf_nhide].name = hbnf_rr_hn;  hbnf_hide[hbnf_nhide].nlen = hbnf_rr_hnl;  hbnf_nhide++;
+        hbnf_rr_hn = NULL;
+    }
+}
+/* the texts a continuing rewrite left behind: what was read from them (the strings of the tree) stays valid until the next parse */
+static char **hbnf_keep;  static size_t hbnf_nkeep, hbnf_capkeep;
+static void hbnf_reread_clear(void) {
+    size_t i;
+    for (i = 0; i < hbnf_nkeep; i++) free(hbnf_keep[i]);
+    hbnf_nkeep = 0;
+    for (i = 0; i < hbnf_nhide; i++) free(hbnf_hide[i].name);
+    hbnf_nhide = 0;  free(hbnf_rr_hn);  hbnf_rr_hn = NULL;
+    hbnf_rr = 0;  hbnf_rr_cont = 0;  hbnf_rd = 0;  hbnf_rr_n = 0;  hbnf_rr_work = 0;  hbnf_rr_buf = NULL;  hbnf_td = 0;  hbnf_rr_nlog = 0;  hbnf_rr_orig = NULL;
+}
 /* Where position pos of the text being read stood in the text the user wrote; rules[0 .. *nr) are the rules whose
    expansions held it, the newest first.  The log is walked back, newest first: a position after a splice moves by what
    the splice changed, one inside the text a splice made goes to the start of the text it replaced. */
@@ -57,10 +116,13 @@ static size_t hbnf_origin(size_t pos, const char *rules[4], int *nr, const char 
     return pos;
 }
 /* The text with [s, e) replaced; the text of the rewrite before is given back, the caller's own is not. */
-static const char *hbnf_splice(const char *text, size_t len) {
-    size_t tail = len - hbnf_rr_e;
-    char *r = (char *)malloc(hbnf_rr_s + hbnf_rr_tn + tail + 1);
-    if (!r) hbnf_oom();
+static size_t hbnf_rr_cap;                    /* the room in hbnf_rr_buf, when a continuing rewrite made it */
+/* The text with [s, e) replaced.  cont = 0 (the parse starts over): a new text, and the one before is given back (the caller's own is not).
+   cont = 1 (the parse goes on): the text before s is not moved, and the strings of the tree that point into it stay valid; the text
+   is made in the room that is there, and a new, larger one is made when it is not (the old one is kept until the next parse). */
+static const char *hbnf_splice2(const char *text, size_t len, int cont) {
+    size_t tail = len - hbnf_rr_e, nl = hbnf_rr_s + hbnf_rr_tn + tail;
+    char *r;
     if (hbnf_rr_n == 0) hbnf_rr_orig = text;
     if (hbnf_rr_nlog == hbnf_rr_caplog) {
         hbnf_rr_caplog = hbnf_rr_caplog ? hbnf_rr_caplog * 2 : 16;
@@ -70,15 +132,37 @@ static const char *hbnf_splice(const char *text, size_t len) {
     hbnf_rr_log[hbnf_rr_nlog].ns = hbnf_rr_s;  hbnf_rr_log[hbnf_rr_nlog].nlen = hbnf_rr_tn;
     hbnf_rr_log[hbnf_rr_nlog].os = hbnf_rr_s;  hbnf_rr_log[hbnf_rr_nlog].oe = hbnf_rr_e;
     hbnf_rr_log[hbnf_rr_nlog].rule = hbnf_rr_rule_;  hbnf_rr_nlog++;
-    memcpy(r, text, hbnf_rr_s);
-    memcpy(r + hbnf_rr_s, hbnf_rr_t, hbnf_rr_tn);
-    memcpy(r + hbnf_rr_s + hbnf_rr_tn, text + hbnf_rr_e, tail);
-    r[hbnf_rr_s + hbnf_rr_tn + tail] = 0;
-    if (text == hbnf_rr_buf) free(hbnf_rr_buf);
+    if (cont && text == hbnf_rr_buf && nl + 1 <= hbnf_rr_cap) {
+        r = hbnf_rr_buf;
+        memmove(r + hbnf_rr_s + hbnf_rr_tn, r + hbnf_rr_e, tail);
+        memcpy(r + hbnf_rr_s, hbnf_rr_t, hbnf_rr_tn);
+    } else {
+        size_t cap = cont ? nl * 2 + 64 : nl + 1;
+        r = (char *)malloc(cap);
+        if (!r) hbnf_oom();
+        memcpy(r, text, hbnf_rr_s);
+        memcpy(r + hbnf_rr_s, hbnf_rr_t, hbnf_rr_tn);
+        memcpy(r + hbnf_rr_s + hbnf_rr_tn, text + hbnf_rr_e, tail);
+        if (text == hbnf_rr_buf) {
+            if (!cont) free(hbnf_rr_buf);
+            else {
+                if (hbnf_nkeep == hbnf_capkeep) {
+                    hbnf_capkeep = hbnf_capkeep ? hbnf_capkeep * 2 : 16;
+                    hbnf_keep = (char **)realloc(hbnf_keep, hbnf_capkeep * sizeof *hbnf_keep);
+                    if (!hbnf_keep) hbnf_oom();
+                }
+                hbnf_keep[hbnf_nkeep++] = hbnf_rr_buf;
+            }
+        }
+        hbnf_rr_cap = cap;
+    }
+    r[nl] = 0;
+    hbnf_hide_move(hbnf_rr_s, hbnf_rr_e, hbnf_rr_tn, cont);
     free(hbnf_rr_t);  hbnf_rr_t = NULL;
     hbnf_rr_buf = r;  hbnf_rr = 0;  hbnf_rr_n++;
     return r;
 }
+static const char *hbnf_splice(const char *text, size_t len) { return hbnf_splice2(text, len, 0); }
 /* `with tag.params = tag2`: in what is in the buffer, each name of the comma-separated list ps is replaced by the
    matching argument of the list as (split at the commas outside brackets and strings, blanks trimmed); both lists
    may be kept with their outer brackets. */

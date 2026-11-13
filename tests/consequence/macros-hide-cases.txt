@@ -1,0 +1,7 @@
+bad	#define A A;A;
+bad	#define A B;#define B A;A;
+ok	#define F(x) x;F(7);F(8);
+ok	#define PI 3;PI+PI;
+bad	#define A A+1;A;
+ok	#define A 1;#define B A+A;B;
+bad	#define SQ(x) SQ(x);SQ(2);

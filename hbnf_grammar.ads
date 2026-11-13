@@ -219,6 +219,8 @@ package HBNF_Grammar is
    --  True once a grammar has a fact (`=> tag.attr = tag2`, or `tag.attr` in a template), or a rewrite (`=> template`).
    function Uses_Facts return Boolean;
    function Uses_Reread return Boolean;
+   function Uses_Rewind return Boolean;     --  a rewrite that reads the text again from its start, `=>>`
+   function Uses_Continue return Boolean;   --  a rewrite that goes on reading at the start of what it replaced, `=>`
    --  True once a grammar has a `->` (the tree rewrite): a tape of it may hold text in the tape itself.
    function Uses_Tree return Boolean;
    --  The condition of `x where (col ...)` written in a backend's language (Lang: c, rust, zig or ada) on `c_`, the column.

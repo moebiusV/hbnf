@@ -6864,7 +6864,8 @@ package body HBNF_C is
                            begin
                               Append (Buf, Ind & "{ " & Span_Of (Seg) & "hbnf_sb sb_ = { 0, 0, 0 };");
                               Append (Buf, LF);
-                              Append (Buf, Ind & "  if (hbnf_rr_n >= HBNF_MAX_REREAD) { fail(p, ""a rewrite that ends"", 0, p->text + st_, 0); "
+                              Append (Buf, Ind & "  if ((HBNF_MAX_REREAD && hbnf_rr_n >= HBNF_MAX_REREAD) || (HBNF_MAX_REWORK && hbnf_rr_work >= HBNF_MAX_REWORK)"
+                                & ") { fail(p, ""a rewrite that ends"", 0, p->text + st_, 0); "
                                 & Fail & " }");
                               Append (Buf, LF);
                               Append (Buf, Template_Stmts (To_String (E.Code)));
@@ -6893,7 +6894,16 @@ package body HBNF_C is
                                     Append (Buf, LF);
                                  end;
                               end if;
-                              Append (Buf, Ind & "  hbnf_reread (st_, k_, &sb_, """ & C_Escape (To_String (Rules (Owner).Name)) & """);  p->len = p->pos;   /* nothing more can match: the parse is read again */");
+                              if E.Ctx /= Null_Unbounded_String then
+                                 --  `hiding N`: where this text stands, the name kept as N is not read again by `x not in hidden`
+                                 Append (Buf, Ind & "  hbnf_rr_hide (p->text + cp_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid
+                                   & ", cl_" & C_Ident_Lower (To_String (E.Ctx)) & "_" & Tsid & ");");
+                                 Append (Buf, LF);
+                              end if;
+                              Append (Buf, Ind & "  " & (if E.Id = 1 then "" else "hbnf_rr_len0 = p->len;  ")
+                                & "hbnf_reread (st_, k_, &sb_, """ & C_Escape (To_String (Rules (Owner).Name)) & """, "
+                                & (if E.Id = 1 then "0" else "1") & ");  p->len = p->pos;   /* nothing more can match: "
+                                & (if E.Id = 1 then "the parse is read again from its start" else "the rule that began here reads it again") & " */");
                               Append (Buf, LF);
                               Append (Buf, Ind & "  " & Fail & " }");
                               Append (Buf, LF);
@@ -6983,9 +6993,10 @@ package body HBNF_C is
                              & Ctx_Img (Base_Of (K))));
                            Append (Buf, LF);
                            Append (Buf, Ind & "  if (" & (if E.Op = B_Test then "!" else "")
-                             & "hbnf_ctx_has (CTX_"
-                             & C_Ident_Lower (To_String (E.Ctx))
-                             & ", p->text + st_, k_ - st_)) {");
+                             & (if To_String (E.Ctx) = "hidden"
+                                then "hbnf_hidden (p, st_, k_ - st_)) {"
+                                else "hbnf_ctx_has (CTX_" & C_Ident_Lower (To_String (E.Ctx))
+                                     & ", p->text + st_, k_ - st_)) {"));
                            Append (Buf, LF);
                            Append (Buf, Ind & "      p->pos = st_; fail(p, ""a name "
                              & (if E.Op = B_Test then "in `" else "not in `") & To_String (E.Ctx)
@@ -10973,6 +10984,31 @@ package body HBNF_C is
       if HBNF_Grammar.Uses_Reread then
          Append (Res, HBNF_Template.Get ("c_reread"));
          Append (Res, LF);
+         if HBNF_Grammar.Uses_Continue then
+            --  `=>`: the rule that began where the replaced text began, and whose parent did not, reads it again from there
+            declare
+               Any_Ws : constant Boolean := (for some R of Rules => R.Whitespace /= Null_Unbounded_String);
+            begin
+               Append (Res,
+                 "/* where a rule that began at pos begins its text: after the white space it skips */" & LF
+                 & "static size_t hbnf_norm(parser_t *p, size_t pos) {" & LF
+                 & (if Any_Ws
+                    then "    size_t sp_ = p->pos, sl_ = p->len, r_;  p->pos = pos;  p->len = hbnf_rr_len0;  skip_ws(p);  r_ = p->pos;  p->pos = sp_;  p->len = sl_;" & LF
+                         & "    return r_;" & LF
+                    else "    (void)p;  return pos;" & LF)
+                 & "}" & LF
+                 & "static int hbnf_rr_mine(parser_t *p, size_t s0, unsigned d) {" & LF
+                 & "    return hbnf_norm(p, s0) == hbnf_rr_s && (d == 0 || hbnf_norm(p, hbnf_rs[d - 1]) != hbnf_rr_s);" & LF
+                 & "}" & LF
+                 & "/* make the rewrite: the text is the text with [s, e) replaced, the old text stays (the tree's strings are slices of it) */" & LF
+                 & "static void hbnf_rr_apply(parser_t *p) {" & LF
+                 & "    size_t len = hbnf_rr_len0, nl = len - (hbnf_rr_e - hbnf_rr_s) + hbnf_rr_tn;" & LF
+                 & "    hbnf_rr_work += len - hbnf_rr_e;   /* the text after it that moves */" & LF
+                 & "    p->text = hbnf_splice2(p->text, len, 1);  p->len = nl;" & LF
+                 & "    p->wc_n = 0;  p->ws_at1 = 0;   /* what was remembered about the old text */" & LF
+                 & "}" & LF);
+            end;
+         end if;
       end if;
       if HBNF_Grammar.Uses_Frames then
          Append (Res, HBNF_Template.Get ("c_frames"));
@@ -11258,7 +11294,7 @@ package body HBNF_C is
                           then "    if (!ok_) hbnf_reset (&m_);" & LF else "")
                        & "    return ok_;" & LF & "}" & LF
                        & (if Cycle_Target (I) then "static bool" else "static inline bool")
-                       & " parse_body_" & C_Name (NM)
+                       & (if HBNF_Grammar.Uses_Continue then " parse_core_" else " parse_body_") & C_Name (NM)
                        & "(parser_t *p, " & Out_Type (I) & ") {" & LF
                        & (if Cycle_Target (I)
                           then (if Valued then "    HBNF_STACK_GUARD(p);" & LF
@@ -11276,6 +11312,23 @@ package body HBNF_C is
                Append (Res, LF);
                Append (Res, "#undef r" & LF);
                Append (Res, LF);
+               if HBNF_Grammar.Uses_Continue then
+                  --  a rewrite that goes on reading is made by the outermost rule that began where its text began: it reads the
+                  --  new text from there, from its first alternative (what failed in the rules below it was only the old text)
+                  Append (Res, "static bool parse_body_" & C_Name (NM) & "(parser_t *p, " & Out_Type (I) & ") {" & LF
+                    & "    size_t s0 = p->pos;  unsigned d = hbnf_rd;  bool ok;" & LF
+                    & "    if (d < 4096) hbnf_rs[d] = s0;" & LF
+                    & "    hbnf_rd++;" & LF
+                    & "    for (;;) {" & LF
+                    & "        ok = parse_core_" & C_Name (NM) & "(p, out);" & LF
+                    & "        if (!hbnf_rr) break;" & LF
+                    & "        ok = false;   /* a rewrite is waiting: what matched meanwhile was matched on text that is going away */" & LF
+                    & "        if (!hbnf_rr_cont || d >= 4096 || !hbnf_rr_mine(p, s0, d)) break;" & LF
+                    & "        hbnf_rr_apply(p);  p->pos = s0;" & LF
+                    & "    }" & LF
+                    & "    hbnf_rd--;" & LF
+                    & "    return ok;" & LF & "}" & LF & LF);
+               end if;
             end if;
          end;
       end loop;
@@ -11448,6 +11501,7 @@ package body HBNF_C is
             Append (Res, "fail_:" & LF
               & "    if (hbnf_rr) {" & LF
               & "        int q_ = p.quiet;" & LF
+              & "        hbnf_rr_work += strlen(text);   /* what a rewind reads again */" & LF
               & "        text = hbnf_splice(text, strlen(text));" & LF
               & (if Ctx_On then "        hbnf_ctx_clear();" & LF else "")
               & (if HBNF_Grammar.Uses_Frames
@@ -11462,6 +11516,7 @@ package body HBNF_C is
               & "        goto start_;" & LF
               & "    }" & LF
               & "    if (p.quiet) {" & LF
+              & "        hbnf_reread_clear();   /* the rewrites of the first pass are made again by the second */" & LF
               & (if Ctx_On then "        hbnf_ctx_clear();" & LF else "")
               & (if HBNF_Grammar.Uses_Frames
                  then "        hbnf_fsp = 0; hbnf_fb = 0;"

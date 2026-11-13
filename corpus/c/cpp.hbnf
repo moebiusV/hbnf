@@ -1,0 +1,66 @@
+; The C preprocessor as a grammar (the source stack, second slice).  It reads C source text and leaves it expanded: an object-like
+; macro is replaced by its body, a function-like one by its body with the parameters replaced by the arguments, a conditional group
+; by the branch that is taken, and the grammar goes on reading at the start of the new text (`=>`; `=>>` would read everything again from
+; the start), so a macro that uses another is expanded in turn, and one whose name ends its body and whose `(` is in the source is
+; called (CONTEXTS section 30, 1).  The text after the last rewrite is the result (`hbnf_rr_buf` in the C backend): the C grammars
+; read it, and read the `#define` lines that are left in it as white space.  Strings, characters and comments are not expanded.
+;   Not yet: `#include`, `#if` with an expression (`0`, `1`, `defined(X)` and `!defined(X)` only), `#elif`, `#` and `##`, `__VA_ARGS__`,
+;   `__LINE__`, `__FILE__`.  A macro is not expanded inside its own expansion (`hiding N` and `x not in hidden`: `#define if x(a); if` ends), and
+;   an argument is expanded before it goes into the body (rules that expand read it); an expansion that adds a comma to an argument is split
+;   at it, where the standard splits the argument before it is expanded.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+context defs
+context objs
+context funs
+
+cpp  = *item
+item = directive | comment | line-comment | string-lit | char-lit | pp-number | fun-use | obj-use | name | ~"#"
+
+; a macro in use: its body, and for a function-like one with the arguments in the parentheses after it
+obj-use = name in objs not in hidden as N                                                              => N.body hiding N
+fun-use = name in funs not in hidden as N *( HB | newline ) args as A                       => N.body with N.params = A hiding N
+; the arguments are read as text that is itself being expanded, so each is expanded before it goes into the body (the standard's prescan):
+; a macro in an argument is a use like any other, and the rewrite is made there, in place, before the closing parenthesis is read
+args     = "(" *arg-part ")"
+arg-part = args | comment | line-comment | string-lit | char-lit | pp-number | fun-use | obj-use | name | ~( "(" | ")" )
+
+; the directives
+directive = define-fun | define-obj | undef | cond | other-directive
+define-obj = "#" *HB "define" 1*HB name as N !"(" body as B line-end                                   => defs += N, objs += N, N.body = B
+define-fun = "#" *HB "define" 1*HB name as N "(" *~( ")" | CR | LF ) as P ")" body as B line-end      => defs += N, funs += N, N.params = P, N.body = B
+undef      = "#" *HB "undef" 1*HB name as N line-end                                                        => defs -= N, objs -= N, funs -= N
+; a directive that is not one of those and is not the end of a group (`#else`, `#elif`, `#endif`): the text of its line is left as it stands
+other-directive = "#" *HB ( directive-word rest-of-line | line-end )
+directive-word  = ( "include_next" | "include" | "pragma" | "error" | "warning" | "line" | "ident" | "assert" | "unassert" | "import" ) !name-char | DIGIT
+rest-of-line    = *( "\\" newline | ~( CR | LF ) ) line-end
+body       = *( "\\" newline | ~( CR | LF ) )
+
+; a conditional group is replaced by the branch that is taken
+cond = cond-true | cond-false
+cond-true  = "#" *HB true-guard line-end *item as A [ "#" *HB "else" line-end skip-group ] "#" *HB "endif" line-end    => A
+cond-false = "#" *HB false-guard line-end skip-group *HB "#" *HB "else" line-end *item as A *HB "#" *HB "endif" line-end       => A
+           | "#" *HB false-guard line-end skip-group *HB "#" *HB "endif" line-end                                          => ""
+true-guard  = "ifdef" 1*HB name in defs | "ifndef" 1*HB name not in defs | "if" 1*HB "1" !name-char
+            | "if" 1*HB "defined" *HB ( "(" *HB name in defs *HB ")" | name in defs )
+            | "if" 1*HB "!" *HB "defined" *HB ( "(" *HB name not in defs *HB ")" | name not in defs )
+false-guard = "ifdef" 1*HB name not in defs | "ifndef" 1*HB name in defs | "if" 1*HB "0" !name-char
+            | "if" 1*HB "defined" *HB ( "(" *HB name not in defs *HB ")" | name not in defs )
+            | "if" 1*HB "!" *HB "defined" *HB ( "(" *HB name in defs *HB ")" | name in defs )
+; the lines of a branch that is not taken, with the groups inside it, up to its #else or #endif
+skip-group  = *( skip-nested | skip-line )
+skip-nested = *HB "#" *HB ( "ifndef" | "ifdef" | "if" ) !name-char rest-of-line skip-group [ *HB "#" *HB "else" !name-char rest-of-line skip-group ] *HB "#" *HB "endif" !name-char rest-of-line
+skip-line   = *HB newline | *HB ~( "#" | CR | LF | " " | HTAB ) rest-of-line | *HB "#" *HB ( directive-word rest-of-line | "define" !name-char rest-of-line | "undef" !name-char rest-of-line | line-end )
+
+; the tokens
+comment      = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
+line-comment = "//" *( "\\" newline | ~( CR | LF ) )
+string-lit   = "\"" *( ~( "\"" | "\\" | CR | LF ) | "\\" OCTET ) "\""
+char-lit     = "'" *( ~( "'" | "\\" | CR | LF ) | "\\" OCTET ) "'"
+pp-number    = ( DIGIT | "." DIGIT ) *( ( "e" | "E" | "p" | "P" ) ( "+" | "-" ) | ALNUM | "." | "_" )
+name         = ( ALPHA | "_" ) *name-char
+name-char    = ALNUM | "_"
+HB           = " " | HTAB
+newline      = CR LF | LF | CR
+line-end     = *HB ( newline | !OCTET )

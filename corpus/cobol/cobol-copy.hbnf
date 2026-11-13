@@ -1,8 +1,8 @@
 ; COBOL with COPY and REPLACE read (the source stack, first slice, C backend only: it has native code).
 ; cobol.hbnf reads COPY and REPLACE as statements and leaves the text alone; here each of them is a rewrite, `=>`: the text
 ; of the library file (with REPLACING applied) takes the place of the COPY statement, the text after a REPLACE statement
-; (up to the next REPLACE) is made with its pairs applied, and the grammar reads again from the start of what was replaced
-; (CONTEXTS section 30, the source stack).  The library is found by name in the working directory and in the directories of
+; (up to the next REPLACE) is made with its pairs applied, and the grammar goes on reading at the start of what was replaced
+; (`=>`, CONTEXTS section 30, the source stack).  The library is found by name in the working directory and in the directories of
 ; COBCPY (separated by colons), as name, name.cpy, .cbl, .cob or .copy, and in the upper and lower case of the name.
 ;   hbnf corpus/cobol/cobol-copy.hbnf --root=compilation-group --backend=c
 prefix none

@@ -66,5 +66,7 @@ string-literal = [ 0x4C ] DQUOTE *str-body DQUOTE
 blank      = SP | HTAB | LF | CR | 0x0B | 0x0C
 comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
 line-comment = "//" *~LF
-pp-line    = "#" *~LF
-ws         = 1*( blank | comment | line-comment | pp-line )
+pp-line    = "#" *( "\\" ( CR LF | LF ) | ~LF )
+ws         = 1*( blank | comment | line-comment | pp-line | line-splice )
+; a backslash before the end of a line is nothing, wherever it stands (translation phase 2): a macro body that went on over lines leaves them
+line-splice = "\\" ( CR LF | LF )

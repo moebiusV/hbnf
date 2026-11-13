@@ -177,7 +177,9 @@ package body HBNF_Grammar is
    Context_Words   : Word_Vectors.Vector;
    Facts_Seen      : Boolean := False;     --  a fact or a template that reads one
    Group_Depth     : Natural := 0;         --  how many groups and options the reader is inside
-   Reread_Seen     : Boolean := False;     --  a rewrite, `=> template`
+   Reread_Seen     : Boolean := False;     --  a rewrite, `=> template` or `=>> template`
+  Rewind_Seen     : Boolean := False;     --  one that rewinds, `=>>`
+  Continue_Seen   : Boolean := False;     --  one that goes on reading, `=>`
    Tree_Seen       : Boolean := False;     --  a tree rewrite, `-> template`
    Ctx_Code        : Boolean := False;   --  a `%where { }` or a `%bind { }` is written somewhere
 
@@ -952,6 +954,8 @@ package body HBNF_Grammar is
       Facts_Seen := False;
       Group_Depth := 0;
       Reread_Seen := False;
+      Rewind_Seen := False;
+      Continue_Seen := False;
       Tree_Seen := False;
       Ctx_Code := False;
       Ctx_Pending.Clear;
@@ -1963,8 +1967,14 @@ package body HBNF_Grammar is
                   --  `=>`: what happens because the alternative matched.  What follows, to the end
                   --  of the alternative (a line end, `|`, a closing bracket, a `%` word, a
                   --  comment), is the consequences, one token of text that the reader splits at
-                  --  the commas (CONTEXTS.md section 30).
-                  Emit (T_Arrow);  I := I + 2;  Col := Col + 2;
+                  --  the commas (CONTEXTS.md section 30).  `=>>` is the same with a rewrite that rewinds:
+                  --  the parse is read again from the start of the text (the token's text is `>`), where `=>`
+                  --  goes on reading at the start of the text it replaced.
+                  if I + 1 < Text'Last and then Text (I + 2) = '>' then
+                     Emit (T_Arrow, ">");  I := I + 3;  Col := Col + 3;
+                  else
+                     Emit (T_Arrow);  I := I + 2;  Col := Col + 2;
+                  end if;
                   Raw_Consequence (I, Col);
                else
                   Emit (T_Eq, (if Legacy_Ops then "" else "="));
@@ -5913,13 +5923,21 @@ package body HBNF_Grammar is
 
       --  `template [with tag.attr = tag2]`: the match is replaced by the template and read again; with a
       --  `with`, the names in `tag.attr` (comma-separated) are replaced in it by the arguments in `tag2`
-      procedure Reread_Consequence (Item : String) is
+      procedure Reread_Consequence (Full : String) is
+         --  `hiding tag`: the text the template makes is a place where the name kept as tag is not read again by a test
+         --  `x not in hidden` (the macro that is being expanded is not expanded in its own expansion)
+         H : constant Natural := Find_Outside (Full, " hiding ");
+         Item : constant String := (if H = 0 then Full else Trim_Blanks (Full (Full'First .. H - 1)));
+         Hide : constant String := (if H = 0 then "" else Trim_Blanks (Full (H + 8 .. Full'Last)));
          W : constant Natural := Find_Outside (Item, " with ");
          Template : constant String :=
            Trim_Blanks (if W = 0 then Item else Item (Item'First .. W - 1));
          With_Part : constant String :=
            (if W = 0 then "" else Trim_Blanks (Item (W + 6 .. Item'Last)));
       begin
+         if Hide /= "" and then not Tag_Bound (Hide) then
+            Fail (Where & "`=> " & Full & "`: no `as " & Hide & "` stands earlier in this alternative");
+         end if;
          Check_Template (Template, Item);
          if With_Part /= "" then
             declare
@@ -5937,10 +5955,16 @@ package body HBNF_Grammar is
             end;
          end if;
          Reread_Seen := True;
+         if To_String (T.Text) = ">" then
+            Rewind_Seen := True;
+         else
+            Continue_Seen := True;
+         end if;
          B.Append
            (new Element'(Kind => Block, Min => 1, Max => 1, Op => B_Reread,
-                         Ctx => Null_Unbounded_String, Path => To_Unbounded_String (With_Part),
-                         Id => 0, Look => <>, Code => To_Unbounded_String (Template)));
+                         Ctx => To_Unbounded_String (Hide), Path => To_Unbounded_String (With_Part),
+                         Id => (if To_String (T.Text) = ">" then 1 else 0), Look => <>,
+                         Code => To_Unbounded_String (Template)));
       end Reread_Consequence;
 
       --  `-> template`: the tree of the rule is as if the template, parsed by the rule itself, had matched
@@ -9490,6 +9514,7 @@ package body HBNF_Grammar is
                when Block =>
                   Look (E.Look);
                   if E.Op in B_Bind | B_Test | B_Not_Test
+                    and then To_String (E.Ctx) /= "hidden"     --  the built-in one: the names a rewrite hides where it made text
                     and then not (for some C of Context_Words => C = E.Ctx)
                   then
                      raise Parse_Error with
@@ -12349,6 +12374,8 @@ package body HBNF_Grammar is
    function Uses_Switch return Boolean is (Switch_Seen);
    function Uses_Facts return Boolean is (Facts_Seen);
    function Uses_Reread return Boolean is (Reread_Seen);
+   function Uses_Rewind return Boolean is (Rewind_Seen);
+   function Uses_Continue return Boolean is (Continue_Seen);
    function Uses_Tree return Boolean is (Tree_Seen);
 
    function Scope_Keys return Sorted_Names.Set is

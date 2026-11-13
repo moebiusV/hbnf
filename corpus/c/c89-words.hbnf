@@ -48,5 +48,5 @@ string-literal = [ 0x4C ] DQUOTE *str-body DQUOTE
 ; preprocessor leaves in its output (`# 12 "file.c"`, `#pragma`), since hbnf has no preprocessor.
 blank      = SP | HTAB | LF | CR | 0x0B | 0x0C
 comment    = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
-pp-line    = "#" *~LF
+pp-line    = "#" *( "\\" ( CR LF | LF ) | ~LF )
 ws         = 1*( blank | comment | pp-line )

@@ -1,0 +1,20 @@
+; the macros of macros.hbnf with `=>>`: a rewrite that rewinds, the parse read again from the start of the text (`=>` goes on reading where the text it replaces began)
+; only if its macros expand to numbers.
+prefix none
+context macros
+whitespace none
+
+doc       = *stmt
+stmt      = define | expr ";"
+define    = "#define" SP name as N params-part as P SP body as B ";"
+                                         => macros += N, N.params = P, N.body = B
+expr      = term *( "+" term )
+term      = macro-use | number
+macro-use = name in macros as N args-part as A
+                                         =>> N.body with N.params = A
+params-part = [ "(" *~")" ")" ]
+args-part   = [ "(" *~")" ")" ]
+body      = *~";"
+name      = 1*0x41..0x5A
+number    = 1*0x30..0x39
+SP        = " "

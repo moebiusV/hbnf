@@ -101,14 +101,31 @@ run() {
 		"$CLI" "$g" --backend=$b 2>&1 > /dev/null | grep -q "rule \`$r\` has a consequence on a context, a fact or a rewrite" \
 			|| { echo "consequence: FAIL ($n: $b does not refuse it by rule name)"; fail=1; }
 	done
-	# (Ada refuses any grammar with a `context` already)
-	"$CLI" "$g" --backend=ada 2>&1 > /dev/null | grep -q 'a grammar with `context` can be emitted in C so far' \
+	# (Ada generates a context now, and refuses facts, rewrites and `hidden` as the others do)
+	"$CLI" "$g" --backend=ada 2>&1 > /dev/null | grep -qE "can be emitted in C so far|rule \`$r\` has a consequence on a context, a fact or a rewrite|which only the C backend generates" \
 		|| { echo "consequence: FAIL ($n: ada does not refuse it)"; fail=1; }
 }
 run names stmt rza
 run bindscope stmt rza
 run macros define rz
+run macros-rewind define rz
+run macros-hide macro-use
 run fn ''
+
+# a rewrite that never ends runs as long as it runs (the standards set no limit: HBNF_MAX_REREAD and HBNF_MAX_REWORK are 0 unless a user sets them
+# with -D); with them set it stops, with `=>` and with `=>>`, on a short text and on a long one, in a few seconds
+for g in loop loop-rewind; do
+	"$CLI" tests/consequence/$g.hbnf --backend=c > "$W/$g.c" 2> "$W/$g.err" || { echo "consequence: FAIL ($g does not generate)"; fail=1; continue; }
+	lroot=$(sed -n 's/^bool parse_text(const char \*text, \(.*\) \*out,$/\1/p' "$W/$g.c")
+	cat "$W/$g.c" corpus/c/check.c > "$W/$g-m.c"
+	cc -std=gnu11 -D_GNU_SOURCE -w -I runtime "-DOUT_T=$lroot" -DHBNF_MAX_REREAD=100000 -DHBNF_MAX_REWORK=1073741824 "$W/$g-m.c" -o "$W/$g-m" 2> "$W/$g.cc" || { echo "consequence: FAIL ($g: cc: $(head -c 300 "$W/$g.cc"))"; fail=1; continue; }
+	printf 'a' > "$W/short.txt"; python3 -c "print('a' + 'b' * 2000000, end='')" > "$W/long.txt"
+	for t in short long; do
+		total=$((total + 1)); s0=$(date +%s)
+		got=$(timeout 60 "$W/$g-m" "$W/$t.txt" 2>&1 | cut -d' ' -f1 | head -1); s1=$(date +%s)
+		[ "$got" = bad ] && [ $((s1 - s0)) -lt 30 ] || { echo "consequence: FAIL ($g on the $t text: should be bad in a few seconds, was ${got:-none} after $((s1 - s0)) s)"; fail=1; }
+	done
+done
 
 # The chain of rewrites (R591): an error in text that a rewrite made is reported against the text the user wrote, with the line
 # and column there, that text under the caret, and a note naming the rule whose expansion held it; an error after a rewrite is

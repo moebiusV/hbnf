@@ -1,0 +1,8 @@
+; a rewrite that never ends: `a` is replaced by `a`, each time.  The parse stops with an error and does not run for hours, whichever arrow
+; it has and however long the text is, once the limits are set (-DHBNF_MAX_REREAD=n, -DHBNF_MAX_REWORK=n; both are 0, no limit, by default)
+prefix none
+whitespace none
+
+doc  = *unit
+unit = "a"                       => "a"
+     | 1*0x62..0x7A
