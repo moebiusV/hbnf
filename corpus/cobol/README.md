@@ -71,3 +71,17 @@ words, as a trie, are 1,800 nodes before the automaton is minimized to about 800
 now it parses the rule where it stands and puts everything back, in all four backends.  And a
 case-insensitive literal in a rule of characters was one branch for each of its spellings, so a word of more
 than four letters could not be one; each letter is now both its cases at one position, and a word is one branch.
+
+## The gaps that are left (2026-11-13)
+
+What cobc accepts and the parser refuses, by the scan (`tests/cobol-scan.sh`; the baselines are 3 in free format, 0 for NIST in free
+format, 2 for NIST in the fixed format).  Each is a kind of thing, not a typo:
+
+| program | what it needs | where it waits |
+|---|---|---|
+| `run_fundamental-076` | conditional compilation, `>>IF P64 SET`, `>>ELSE`, `>>END-IF` | the source stack (a preprocessor): the rewrite and the contexts it reads are C only until the port to Rust, Zig and Ada |
+| `syn_misc-065` | the GUI screen extensions of ACUCOBOL (`LIST-BOX`, `MODIFY`, `DISPLAY FLOATING WINDOW`) | left out, as the vendor extensions are |
+| `syn_misc-175` | the VALIDATE facility of COBOL 2002: `VALIDATE-STATUS`, `WHEN ERROR FOR` and the rest (the unnamed level 88 with `IS VALID`, a `VARYING` list and `INVALID WHEN` are read now) | more clauses of the one facility |
+| `CM201M` (fixed) | `ACCEPT ... MESSAGE COUNT` of the communication section | the communication section's statements |
+| `NC205A` (fixed) | a word cut at the end of a line and continued after the `-` of the next (`PROCEDURE` and `DIVISION` are one name, `PROCEDUREDIVISION`) | the scanner of a word in the fixed format: the header of `cobol-fixed.hbnf` says so |
+

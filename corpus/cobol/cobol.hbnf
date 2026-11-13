@@ -168,17 +168,17 @@ report-type             = "REPORT" "HEADING" | "RH" | "PAGE" "HEADING" | "PH" | 
                         | "PAGE" "FOOTING" | "PF" | "REPORT" "FOOTING" | "RF"
 special-names-clause = is "SPECIAL-NAMES" ( "CURSOR" | "CRT" "STATUS" )
 data-description-entry = "66" data-name renames-clause "."
-                       | "88" data-name 1*value-clause(condition-value) "."
+                       | "88" [ data-name ] 1*value-clause(condition-value) [ ( "IS" | "ARE" ) ( "VALID" | "INVALID" ) [ "WHEN" condition ] ] "."
                        | "78" data-name *plain-clause "."
                        | plain-level [ data-name | "FILLER" ] any of ( special-names-clause volatile-clause same-as-clause picture-clause usage-clause value-clause(value-item)
                                                                      redefines-clause renames-clause sign-clause justified-clause synchronized-clause blank-zero-clause
-                                                                     type-clause default-clause present-when-clause destination-clause class-clause identified-by-clause
+                                                                     type-clause default-clause present-when-clause invalid-when-clause destination-clause class-clause identified-by-clause
                                                                      global-clause based-clause typedef-clause static-clause external-clause external-form-clause
                                                                      constant-clause any-length-clause dynamic-length-clause unsigned-clause occurs-clause ) "."
 data-name              = user-word | "PAGE-COUNTER" | "LINE-COUNTER" | "LINAGE-COUNTER"
 ; the clauses of a data description entry come in any order, each at most once (an entry of level 66, 78 or 88 has no OCCURS; cobc allows it on the others)
 plain-clause           = special-names-clause | volatile-clause | same-as-clause | item-clause | redefines-clause | renames-clause | sign-clause
-                       | justified-clause | synchronized-clause | blank-zero-clause | type-clause | default-clause | present-when-clause
+                       | justified-clause | synchronized-clause | blank-zero-clause | type-clause | default-clause | present-when-clause | invalid-when-clause
                        | destination-clause | class-clause | identified-by-clause | global-clause | based-clause | typedef-clause | static-clause
                        | external-clause | external-form-clause | constant-clause | any-length-clause | dynamic-length-clause | unsigned-clause
 volatile-clause        = "VOLATILE"
@@ -187,6 +187,7 @@ blank-zero-clause      = "BLANK" [ "WHEN" ] "ZERO"
 type-clause            = "TYPE" to identifier
 default-clause         = "DEFAULT" is operand
 present-when-clause    = "PRESENT" "WHEN" condition
+invalid-when-clause    = "INVALID" "WHEN" condition
 destination-clause     = "DESTINATION" identifier
 class-clause           = "CLASS" is ( "NUMERIC" | "ALPHABETIC" | "ALPHABETIC-LOWER" | "ALPHABETIC-UPPER" | user-word )
 identified-by-clause   = "IDENTIFIED" by operand
@@ -216,7 +217,7 @@ value-clause(V)        := "VALUE" is ( V *( [ "OR" ] V ) | "ALL" literal ) [ [ "
 value-item             = "NEXT" | "START" "OF" identifier | operand [ thru operand ]
 condition-value        = "NEXT" | condition-operand [ thru condition-operand ]
 condition-operand      = literal | identifier
-occurs-clause          = "OCCURS" ( "UNBOUNDED" "DEPENDING" on identifier | !"UNBOUNDED" operand ( "TO" ( operand | "UNBOUNDED" ) [ "TIMES" ] "DEPENDING" on identifier | [ "TIMES" ] [ "DEPENDING" on identifier ] ) ) [ "VARYING" identifier [ "FROM" operand ] [ "BY" operand ] ]
+occurs-clause          = "OCCURS" ( "UNBOUNDED" "DEPENDING" on identifier | !"UNBOUNDED" operand ( "TO" ( operand | "UNBOUNDED" ) [ "TIMES" ] "DEPENDING" on identifier | [ "TIMES" ] [ "DEPENDING" on identifier ] ) ) [ "VARYING" 1*( identifier [ "FROM" operand ] [ "BY" operand ] ) ]
                          *( ( "ASCENDING" | "DESCENDING" ) key is 1*identifier ) [ "INDEXED" by 1*user-word ]
 redefines-clause       = "REDEFINES" data-name
 renames-clause         = "RENAMES" identifier [ thru identifier ]
