@@ -1,0 +1,24 @@
+pub fn parse_text(alloc: std.mem.Allocator, text: []const u8,
+                  err: *[512]u8, err_line: *usize, err_col: *usize) ParseError!{{&root_type}} {
+    // a rewrite (`=> template`) replaces the text a match stands for and the parse starts again on the new text; the tree borrows
+    // the text, so the new texts are kept (the allocator's)
+    var cur: []const u8 = text;
+    var n_rr: usize = 0;
+    while (true) {
+{{&switch_decl}}        var p = P{ .text = cur, .alloc = alloc{{&switch_init}} };
+{{&reset}}{{&lead_ws}}        const res = {{&root_fn}}(&p);
+        if (p.rr) {
+            n_rr += 1;
+            if (n_rr > 100000) { p.set_err("a rewrite that ends"); return p.err_out(err, err_line, err_col); }
+            const nb = alloc.alloc(u8, p.rr_s + p.rr_t.len + (cur.len - p.rr_e)) catch return p.err_out(err, err_line, err_col);
+            @memcpy(nb[0..p.rr_s], cur[0..p.rr_s]);
+            @memcpy(nb[p.rr_s..][0..p.rr_t.len], p.rr_t);
+            @memcpy(nb[p.rr_s + p.rr_t.len ..], cur[p.rr_e..]);
+            cur = nb;
+            continue;
+        }
+        const out = res catch return p.err_out(err, err_line, err_col);
+{{&trail_ws}}        if (p.pos < p.text.len) { p.set_err("end of config"); return p.err_out(err, err_line, err_col); }
+{{&actions}}        return out;
+    }
+}

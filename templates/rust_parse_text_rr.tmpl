@@ -1,0 +1,25 @@
+pub fn parse_text(text: &str) -> Result<{{&root_type}}, ParseError> {
+    // a rewrite (`=> template`) replaces the text a match stands for and the parse starts again on the new text: what was read
+    // before is the same, a definition that made a fact makes it again, and a use that was replaced is no longer there to match
+    let mut buf: String = text.to_string();
+    let mut n_rr: usize = 0;
+    loop {
+        let mut p = P { text: &buf[..], pos: 0, {{&bit_init}}err_pos: 0, err: None, ex: ErrEx::default(){{&ctx_init}}{{&switch_init}} };
+{{&reset}}{{&lead_ws}}        let r = {{&root_fn}}(&mut p);
+        let rr = p.rr.take();
+        if let Some((s, e, t)) = rr {
+            drop(p);
+            n_rr += 1;
+            if n_rr > 100000 { return Err(ParseError { line: 0, col: 0, msg: "a rewrite that ends".to_string() }); }
+            let mut nb = String::with_capacity(buf.len() + t.len());
+            nb.push_str(&buf[..s]);
+            nb.push_str(&t);
+            nb.push_str(&buf[e..]);
+            buf = nb;
+            continue;
+        }
+        let out = match r { Ok(o) => o, Err(_) => return Err(p.take_err()) };
+{{&trail_ws}}        if p.pos < p.text.len() { p.fail("end of config"); return Err(p.take_err()); }
+{{&actions}}        return Ok(out);
+    }
+}

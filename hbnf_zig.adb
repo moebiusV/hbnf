@@ -6,6 +6,7 @@ with Ada.Strings.Unbounded;
 with HBNF_Template;
 with HBNF_Shape;
 with HBNF_Compilable;
+with Ada.Strings.Fixed;
 with HBNF_Lookahead;
 
 package body HBNF_Zig is
@@ -3046,6 +3047,18 @@ package body HBNF_Zig is
          Cat  : constant String := (if Fail = "" then "" else " catch " & Fail);
          Scopes : String_Vectors.Vector;
          Skip_To : Natural := 0;     --  the members of an `all of ( ... )` that its marker has written
+         --  Several operations may follow one element (`x in S not in T`): each asks about the text of that element, so each
+         --  refers to where the element began, not to the operation before it.
+         function Base_Of (K : Natural) return Natural is
+            J : Natural := K - 1;
+         begin
+            while J > First and then Els (J).Kind = Block
+              and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both
+            loop
+               J := J - 1;
+            end loop;
+            return J;
+         end Base_Of;
          --  `x as K` keeps where the text x matched is and how long; `$K`
          --  is that text again.  The pair is local to this sequence.
          Sid : constant String := Img (Bref_Seq + 1);
@@ -3060,6 +3073,65 @@ package body HBNF_Zig is
            (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0
             then "@as(usize, @intCast(" & Up_Slot_Img (E, (if Pfx = "cp" then 'p' else 'l')) & "))"
             else Tag_Var (Pfx, E.Ctx));
+         --  The text a tag kept
+         function Tag_Slice (Tag : String) return String is
+           ("p.text[" & Tag_Var ("cp", To_Unbounded_String (Tag)) & " .. " & Tag_Var ("cp", To_Unbounded_String (Tag))
+            & " + " & Tag_Var ("cl", To_Unbounded_String (Tag)) & "]");
+         --  A rewrite's template (CONTEXTS.md section 30) as the statements that put its parts, one after the other, in `sb_`
+         function Tmpl_Zig (T : String) return String is
+            R : U;
+            K : Natural := T'First;
+         begin
+            while K <= T'Last loop
+               if T (K) in ' ' | ASCII.HT then
+                  K := K + 1;
+               elsif T (K) = '"' then
+                  declare
+                     S0 : constant Natural := K + 1;
+                  begin
+                     K := S0;
+                     while K <= T'Last and then T (K) /= '"' loop
+                        if T (K) = '\' then
+                           K := K + 1;
+                        end if;
+                        K := K + 1;
+                     end loop;
+                     Append (R, Ind & "  " & Pref & "sb_.appendSlice(p.alloc, """ & T (S0 .. K - 1) & """)" & Cat & ";" & LF);
+                     K := K + 1;
+                  end;
+               else
+                  declare
+                     S0 : constant Natural := K;
+                  begin
+                     while K <= T'Last and then T (K) not in ' ' | ASCII.HT | '(' loop
+                        K := K + 1;
+                     end loop;
+                     if K <= T'Last and then T (K) = '(' then
+                        raise Parse_Error with
+                          "rule `" & To_String (Rules (Owner).Name) & "` has a rewrite whose template calls a function (`"
+                          & T (S0 .. K - 1) & "(...)`), which only the C backend generates";
+                     end if;
+                     declare
+                        W : constant String := T (S0 .. K - 1);
+                        D : Natural := 0;
+                     begin
+                        for I in W'Range loop
+                           if W (I) = '.' then
+                              D := I;
+                           end if;
+                        end loop;
+                        if D > 0 then
+                           Append (R, Ind & "  if (p.cx_fact_get(" & Ctx_Const (W (D + 1 .. W'Last)) & ", "
+                             & Tag_Slice (W (W'First .. D - 1)) & ")) |v_| " & Pref & "sb_.appendSlice(p.alloc, v_)" & Cat & ";" & LF);
+                        else
+                           Append (R, Ind & "  " & Pref & "sb_.appendSlice(p.alloc, " & Tag_Slice (W) & ")" & Cat & ";" & LF);
+                        end if;
+                     end;
+                  end;
+               end if;
+            end loop;
+            return To_String (R);
+         end Tmpl_Zig;
          function Local_Reader (Tag : String) return Boolean is
            ((for some I in First .. Last =>
               (Els (I).Kind = Block and then Els (I).Op = B_Same
@@ -3082,6 +3154,10 @@ package body HBNF_Zig is
                Tree_Tag_Sid.Append (To_Unbounded_String (Sid));
             end if;
          end loop;
+         if (for some K in First .. Last => Els (K).Kind = Block and then Els (K).Op = B_Reread) then
+            Append (Buf, Ind & "const sg_" & Sid & " = p.pos;");   --  where this sequence began: a rewrite replaces what it matched
+            Append (Buf, LF);
+         end if;
          for K in First .. Last loop
             if K <= Skip_To then
                null;
@@ -3192,6 +3268,7 @@ package body HBNF_Zig is
             begin
                if K < Last and then Els (K + 1).Kind = Block
                  and then Els (K + 1).Op in B_As | B_Test | B_Not_Test | B_Num | B_Both
+                 and then not (Els (K).Kind = Block and then Els (K).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both)
                then
                   Append (Buf, Ind & "const es_" & Sid & "_" & Img (K) & " = p.pos;");
                   Append (Buf, LF);
@@ -3298,9 +3375,9 @@ package body HBNF_Zig is
                      if E.Op = B_As then
                         --  where the text of the element before began, after the blanks
                         Append (Buf, Ind & "{ const k_ = p.pos; "
-                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (Base_Of (K))
                                & "; p.skip_ws(); " else "")
-                          & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (Base_Of (K)))
                           & "; p.pos = k_; "
                           & (if E.Id /= 1 or else Local_Reader (To_String (E.Ctx))
                              then Tag_Var ("cp", E.Ctx) & " = st_; " & Tag_Var ("cl", E.Ctx) & " = k_ - st_; "
@@ -3424,7 +3501,7 @@ package body HBNF_Zig is
                      elsif E.Op = B_Num then
                         --  the number the element before matched
                         Append (Buf, Ind & "{ var v_: i64 = 0;"
-                          & " for (p.text[es_" & Sid & "_" & Img (K - 1) & " .. p.pos]) |ch_| { v_ = v_ * 10 + @as(i64, ch_ - '0'); }"
+                          & " for (p.text[es_" & Sid & "_" & Img (Base_Of (K)) & " .. p.pos]) |ch_| { v_ = v_ * 10 + @as(i64, ch_ - '0'); }"
                           & " p.fs.items[p.fb + "
                           & Img (Natural'Max (0, HBNF_Grammar.Slot_Of
                               (To_String (Rules (Owner).Name), To_String (E.Ctx))))
@@ -3539,9 +3616,9 @@ package body HBNF_Zig is
                         --  `a intersect b` and `x in ( "a" "b" )`: the text the element before matched is read again by the rule b (or is
                         --  one of the literals and rules written), ending where it ended; the parser reads the text cut at k_ meanwhile
                         Append (Buf, Ind & "{ const k_ = p.pos; "
-                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (Base_Of (K))
                                & "; p.skip_ws(); " else "")
-                          & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (Base_Of (K)))
                           & "; p.pos = k_;");
                         Append (Buf, LF);
                         if E.Look.First_Element.Kind = Group then
@@ -3578,9 +3655,9 @@ package body HBNF_Zig is
                      elsif E.Op in B_Test | B_Not_Test then
                         --  `x ? types` / `x ?! types`: the text x matched is (not) in the context
                         Append (Buf, Ind & "{ const k_ = p.pos; "
-                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (Base_Of (K))
                                & "; p.skip_ws(); " else "")
-                          & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "const st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (Base_Of (K)))
                           & "; p.pos = k_;");
                         Append (Buf, LF);
                         Append (Buf, Ind & "  if (" & (if E.Op = B_Test then "!" else "")
@@ -3605,6 +3682,58 @@ package body HBNF_Zig is
                              & To_String (R) & ")" & Cat & ";");
                            Append (Buf, LF);
                         end;
+                     elsif E.Op = B_Fact then
+                        --  `=> tag.attr = tag2`: the text kept as tag2 is the attribute `attr` of the name kept as tag
+                        Append (Buf, Ind & Pref & "p.cx_fact_put(" & Ctx_Const (To_String (E.Path)) & ", "
+                          & Tag_Slice (To_String (E.Ctx)) & ", " & Tag_Slice (To_String (E.Code)) & ")" & Cat & ";");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Reread then
+                        --  `=> template [with tag.attr = tag2]`: the match is replaced by the template, and the parse starts again
+                        declare
+                           W  : constant String := To_String (E.Path);
+                           Eq : Natural := 0;
+                        begin
+                           Append (Buf, Ind & "{ const k_ = p.pos; "
+                             & (if Skips then "p.pos = sg_" & Sid & "; p.skip_ws(); " else "")
+                             & "const st_ = " & (if Skips then "p.pos" else "sg_" & Sid) & "; p.pos = k_;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  var sb_: std.ArrayList(u8) = .empty;");
+                           Append (Buf, LF);
+                           Append (Buf, Tmpl_Zig (To_String (E.Code)));
+                           Append (Buf, Ind & "  var rt_: []const u8 = sb_.items;");
+                           Append (Buf, LF);
+                           if W /= "" then
+                              for I in W'Range loop
+                                 if W (I) = '=' and then Eq = 0 then
+                                    Eq := I;
+                                 end if;
+                              end loop;
+                              declare
+                                 L : constant String := Ada.Strings.Fixed.Trim (W (W'First .. Eq - 1), Ada.Strings.Both);
+                                 A : constant String := Ada.Strings.Fixed.Trim (W (Eq + 1 .. W'Last), Ada.Strings.Both);
+                                 D : Natural := 0;
+                              begin
+                                 for I in L'Range loop
+                                    if L (I) = '.' then
+                                       D := I;
+                                    end if;
+                                 end loop;
+                                 Append (Buf, Ind & "  if (p.cx_fact_get(" & Ctx_Const (L (D + 1 .. L'Last)) & ", "
+                                   & Tag_Slice (L (L'First .. D - 1)) & ")) |ps_| rt_ = " & Pref & "bnf_subst(p.alloc, sb_.items, ps_, "
+                                   & Tag_Slice (A) & ")" & Cat & ";");
+                                 Append (Buf, LF);
+                              end;
+                           end if;
+                           Append (Buf, Ind & "  p.rr = true; p.rr_s = st_; p.rr_e = k_; p.rr_t = rt_; "
+                             & Pref & "p.fail(""a rewrite"")" & Cat & "; }");
+                           Append (Buf, LF);
+                        end;
+                     elsif E.Op in B_Add | B_Remove then
+                        --  `=> set += tag` and `set -= tag`: the text kept as the tag (Ctx) goes into the set (Path), or out of it
+                        Append (Buf, Ind & Pref & "p." & (if E.Op = B_Add then "cx_add(" else "cx_del(")
+                          & Ctx_Const (To_String (E.Path)) & ", p.text[" & Tag_Var ("cp", E.Ctx) & " .. "
+                          & Tag_Var ("cp", E.Ctx) & " + " & Tag_Var ("cl", E.Ctx) & "])" & Cat & ";");
+                        Append (Buf, LF);
                      elsif E.Op = B_Switch then
                         if E.Path = Null_Unbounded_String then
                            Append (Buf, Ind & "p.push_g("
@@ -4722,11 +4851,76 @@ package body HBNF_Zig is
                  & ": usize = " & Img (Q - 1) & ";" & LF);
             end loop;
             Append (Res,
-              "const Cx = struct {" & LF
+              "// fact: 0 an add or removal, 1 a fact that replaced one (pv), 2 a fact that was the first of its name" & LF
+              & "const CxEntry = struct { name: []const u8, was: u32, fact: u8 = 0, pv: []const u8 = """" };" & LF
+              & "const Cx = struct {" & LF
               & "    map: std.StringHashMapUnmanaged(u32) = .empty," & LF
-              & "    log: std.ArrayList([]const u8) = .empty," & LF
+              & "    vals: std.StringHashMapUnmanaged([]const u8) = .empty," & LF
+              & "    log: std.ArrayList(CxEntry) = .empty," & LF
               & "};" & LF & LF);
          end;
+      end if;
+      if HBNF_Grammar.Uses_Reread then
+         Append (Res,
+           "" & LF
+           & "// `with tag.params = tag2`: in b, each name of the comma-separated list ps is replaced by the matching argument of the list as" & LF
+           & "// (split at the commas outside brackets and strings, blanks trimmed); both lists may be kept with their outer brackets." & LF
+           & "fn bnf_subst(alloc: std.mem.Allocator, b: []const u8, ps0: []const u8, as0: []const u8) ![]u8 {" & LF
+           & "    var ps = ps0;" & LF
+           & "    var as_ = as0;" & LF
+           & "    if (ps.len >= 2 and ps[0] == '(' and ps[ps.len - 1] == ')') ps = ps[1 .. ps.len - 1];" & LF
+           & "    if (as_.len >= 2 and as_[0] == '(' and as_[as_.len - 1] == ')') as_ = as_[1 .. as_.len - 1];" & LF
+           & "    var pnames: [32][]const u8 = undefined;" & LF
+           & "    var np: usize = 0;" & LF
+           & "    var it = std.mem.splitScalar(u8, ps, ',');" & LF
+           & "    while (it.next()) |x| {" & LF
+           & "        const t = std.mem.trim(u8, x, "" \t"");" & LF
+           & "        if (t.len > 0 and np < 32) { pnames[np] = t; np += 1; }" & LF
+           & "    }" & LF
+           & "    var avals: [32][]const u8 = undefined;" & LF
+           & "    var na: usize = 0;" & LF
+           & "    var depth: i32 = 0;" & LF
+           & "    var q: u8 = 0;" & LF
+           & "    var st: usize = 0;" & LF
+           & "    var i: usize = 0;" & LF
+           & "    while (i <= as_.len and na < 32) : (i += 1) {" & LF
+           & "        if (i < as_.len) {" & LF
+           & "            const c = as_[i];" & LF
+           & "            if (q != 0) { if (c == q) q = 0; }" & LF
+           & "            else if (c == '""' or c == '\'') q = c" & LF
+           & "            else if (c == '(') depth += 1" & LF
+           & "            else if (c == ')') depth -= 1;" & LF
+           & "        }" & LF
+           & "        if (i == as_.len or (as_[i] == ',' and depth == 0 and q == 0)) {" & LF
+           & "            avals[na] = std.mem.trim(u8, as_[st..i], "" \t\n"");" & LF
+           & "            na += 1;" & LF
+           & "            st = i + 1;" & LF
+           & "        }" & LF
+           & "    }" & LF
+           & "    var out: std.ArrayList(u8) = .empty;" & LF
+           & "    errdefer out.deinit(alloc);" & LF
+           & "    var k: usize = 0;" & LF
+           & "    while (k < b.len) {" & LF
+           & "        const c = b[k];" & LF
+           & "        if (c == '_' or std.ascii.isAlphabetic(c)) {" & LF
+           & "            var j = k;" & LF
+           & "            while (j < b.len and (b[j] == '_' or std.ascii.isAlphanumeric(b[j]))) j += 1;" & LF
+           & "            const w = b[k..j];" & LF
+           & "            var hit: ?usize = null;" & LF
+           & "            var n: usize = 0;" & LF
+           & "            while (n < np and n < na) : (n += 1) {" & LF
+           & "                if (std.mem.eql(u8, pnames[n], w)) { hit = n; break; }" & LF
+           & "            }" & LF
+           & "            if (hit) |h| try out.appendSlice(alloc, avals[h]) else try out.appendSlice(alloc, w);" & LF
+           & "            k = j;" & LF
+           & "        } else {" & LF
+           & "            try out.append(alloc, c);" & LF
+           & "            k += 1;" & LF
+           & "        }" & LF
+           & "    }" & LF
+           & "    return out.toOwnedSlice(alloc);" & LF
+           & "}" & LF
+           & "" & LF & LF);
       end if;
       Append (Res, "const P = struct {");
       Append (Res, LF);
@@ -4759,6 +4953,10 @@ package body HBNF_Zig is
       if Ctx_On then
          Append (Res, "    cx: [NCTX]Cx = [_]Cx{.{}} ** NCTX,   // the contexts");
          Append (Res, LF);
+      end if;
+      if HBNF_Grammar.Uses_Reread then
+         Append (Res, "    rr: bool = false,   // a rewrite asked for: replace text[rr_s..rr_e] by rr_t and read again" & LF
+           & "    rr_s: usize = 0," & LF & "    rr_e: usize = 0," & LF & "    rr_t: []const u8 = """"," & LF);
       end if;
       if HBNF_Grammar.Uses_Frames then
          Append (Res, "    fs: std.ArrayList(i64) = .empty,   // the frames of numbers");
@@ -4818,16 +5016,42 @@ package body HBNF_Zig is
             Put ("    fn cx_reset(self: *P, m: *const [NCTX]usize) void {");
             Put ("        for (0..NCTX) |c| {");
             Put ("            while (self.cx[c].log.items.len > m[c]) {");
-            Put ("                const name = self.cx[c].log.pop().?;");
-            Put ("                if (self.cx[c].map.getPtr(name)) |n| n.* -= 1;");
+            Put ("                const e = self.cx[c].log.pop().?;");
+            Put ("                if (e.fact == 1) { self.cx[c].vals.putAssumeCapacity(e.name, e.pv); }");
+            Put ("                if (e.fact == 2) { _ = self.cx[c].vals.remove(e.name); }");
+            Put ("                if (self.cx[c].map.getPtr(e.name)) |n| n.* = e.was;");
             Put ("            }");
             Put ("        }");
             Put ("    }");
             Put ("");
             Put ("    fn cx_add(self: *P, c: usize, name: []const u8) ParseError!void {");
-            Put ("        try self.cx[c].log.append(self.alloc, name);");
             Put ("        const g = try self.cx[c].map.getOrPut(self.alloc, name);");
-            Put ("        if (g.found_existing) g.value_ptr.* += 1 else g.value_ptr.* = 1;");
+            Put ("        const was: u32 = if (g.found_existing) g.value_ptr.* else 0;");
+            Put ("        try self.cx[c].log.append(self.alloc, .{ .name = name, .was = was });");
+            Put ("        g.value_ptr.* = was + 1;");
+            Put ("    }");
+            Put ("");
+            Put ("    // taking a name out is an entry that says so, so a mark still undoes it (the newest entry of a name wins)");
+            Put ("    fn cx_del(self: *P, c: usize, name: []const u8) ParseError!void {");
+            Put ("        const g = try self.cx[c].map.getOrPut(self.alloc, name);");
+            Put ("        const was: u32 = if (g.found_existing) g.value_ptr.* else 0;");
+            Put ("        try self.cx[c].log.append(self.alloc, .{ .name = name, .was = was });");
+            Put ("        g.value_ptr.* = 0;");
+            Put ("    }");
+            Put ("");
+            Put ("    // a fact is an entry of its own context with a value: undone with the match, like an add; the newest entry of a name wins");
+            Put ("    fn cx_fact_put(self: *P, c: usize, name: []const u8, v: []const u8) ParseError!void {");
+            Put ("        const g = try self.cx[c].map.getOrPut(self.alloc, name);");
+            Put ("        const was: u32 = if (g.found_existing) g.value_ptr.* else 0;");
+            Put ("        const pv = self.cx[c].vals.get(name);");
+            Put ("        try self.cx[c].vals.ensureUnusedCapacity(self.alloc, 1);");
+            Put ("        try self.cx[c].log.append(self.alloc, .{ .name = name, .was = was, .fact = if (pv != null) 1 else 2, .pv = pv orelse """" });");
+            Put ("        g.value_ptr.* = was + 1;");
+            Put ("        self.cx[c].vals.putAssumeCapacity(name, v);");
+            Put ("    }");
+            Put ("");
+            Put ("    fn cx_fact_get(self: *P, c: usize, name: []const u8) ?[]const u8 {");
+            Put ("        return if (self.cx_has(c, name)) self.cx[c].vals.get(name) else null;");
             Put ("    }");
             Put ("");
             Put ("    fn cx_has(self: *P, c: usize, name: []const u8) bool {");
@@ -5633,7 +5857,7 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
          HBNF_Template.Put (V, "trail_ws",
            (if R.Whitespace /= Null_Unbounded_String
             then "    p.skip_ws();" & LF else ""));
-         return HBNF_Template.Render_File ("zig_parse_text", V);
+         return HBNF_Template.Render_File ((if HBNF_Grammar.Uses_Reread then "zig_parse_text_rr" else "zig_parse_text"), V);
       end Parse_Text_Src;
 
       Lexer  : constant String := Parse_Text_Src;

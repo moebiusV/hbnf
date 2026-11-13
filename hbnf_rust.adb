@@ -6,6 +6,7 @@ with Ada.Strings.Unbounded;
 with HBNF_Template;
 with HBNF_Shape;
 with HBNF_Compilable;
+with Ada.Strings.Fixed;
 with HBNF_Lookahead;
 
 package body HBNF_Rust is
@@ -2834,6 +2835,18 @@ package body HBNF_Rust is
          --  is that text again.  The pair is local to this sequence.
          Sid : constant String := Img (Bref_Seq + 1);
          Skip_To : Natural := 0;     --  the members of an `all of ( ... )` that its marker has written
+         --  Several operations may follow one element (`x in S not in T`): each asks about the text of that element, so each
+         --  refers to where the element began, not to the operation before it.
+         function Base_Of (K : Natural) return Natural is
+            J : Natural := K - 1;
+         begin
+            while J > First and then Els (J).Kind = Block
+              and then Els (J).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both
+            loop
+               J := J - 1;
+            end loop;
+            return J;
+         end Base_Of;
          function Tag_Var (Pfx : String; Tag : Unbounded_String) return String is
            (Pfx & "_" & Rust_Snake (To_String (Tag)) & "_" & Sid);
          --  A capture read through the frame (`$K^`): the number of the frame, as a usize.
@@ -2845,6 +2858,67 @@ package body HBNF_Rust is
            (if HBNF_Grammar.Up_Level (To_String (E.Ctx)) >= 0
             then "(" & Up_Slot_Img (E, (if Pfx = "cp" then 'p' else 'l')) & " as usize)"
             else Tag_Var (Pfx, E.Ctx));
+         --  The text a tag kept, as a slice of the text `full_`
+         function Tag_Slice (Tag : String) return String is
+           ("&full_[" & Tag_Var ("cp", To_Unbounded_String (Tag)) & " .. " & Tag_Var ("cp", To_Unbounded_String (Tag))
+            & " + " & Tag_Var ("cl", To_Unbounded_String (Tag)) & "]");
+         --  A rewrite's template (CONTEXTS.md section 30) as the statements that put its parts, one after the other, in the string
+         --  `sb_`: a string as written, a tag as the text it kept, `tag.attr` as the fact the context `attr` holds for that text.
+         --  A function of a tag (`f(tag)`) is not generated here.
+         function Tmpl_Rust (T : String) return String is
+            R : U;
+            K : Natural := T'First;
+         begin
+            while K <= T'Last loop
+               if T (K) in ' ' | ASCII.HT then
+                  K := K + 1;
+               elsif T (K) = '"' then
+                  declare
+                     S0 : constant Natural := K + 1;
+                  begin
+                     K := S0;
+                     while K <= T'Last and then T (K) /= '"' loop
+                        if T (K) = '\' then
+                           K := K + 1;
+                        end if;
+                        K := K + 1;
+                     end loop;
+                     Append (R, Ind & "  sb_.push_str(""" & T (S0 .. K - 1) & """);" & LF);
+                     K := K + 1;
+                  end;
+               else
+                  declare
+                     S0 : constant Natural := K;
+                  begin
+                     while K <= T'Last and then T (K) not in ' ' | ASCII.HT | '(' loop
+                        K := K + 1;
+                     end loop;
+                     if K <= T'Last and then T (K) = '(' then
+                        raise Parse_Error with
+                          "rule `" & To_String (Rules (Owner).Name) & "` has a rewrite whose template calls a function (`"
+                          & T (S0 .. K - 1) & "(...)`), which only the C backend generates";
+                     end if;
+                     declare
+                        W : constant String := T (S0 .. K - 1);
+                        D : Natural := 0;
+                     begin
+                        for I in W'Range loop
+                           if W (I) = '.' then
+                              D := I;
+                           end if;
+                        end loop;
+                        if D > 0 then
+                           Append (R, Ind & "  if let Some(v_) = p.cx_fact_get(" & Ctx_Const (W (D + 1 .. W'Last)) & ", "
+                             & Tag_Slice (W (W'First .. D - 1)) & ") { sb_.push_str(&v_); }" & LF);
+                        else
+                           Append (R, Ind & "  sb_.push_str(" & Tag_Slice (W) & ");" & LF);
+                        end if;
+                     end;
+                  end;
+               end if;
+            end loop;
+            return To_String (R);
+         end Tmpl_Rust;
          function Local_Reader (Tag : String) return Boolean is
            (for some I in First .. Last =>
               Els (I).Kind = Block and then Els (I).Op = B_Same
@@ -2861,6 +2935,10 @@ package body HBNF_Rust is
                Append (Buf, LF);
             end if;
          end loop;
+         if (for some K in First .. Last => Els (K).Kind = Block and then Els (K).Op = B_Reread) then
+            Append (Buf, Ind & "let sg_" & Sid & " = p.pos;");   --  where this sequence began: a rewrite replaces what it matched
+            Append (Buf, LF);
+         end if;
          for K in First .. Last loop
             if K <= Skip_To then
                null;
@@ -2966,6 +3044,7 @@ package body HBNF_Rust is
             begin
                if K < Last and then Els (K + 1).Kind = Block
                  and then Els (K + 1).Op in B_As | B_Test | B_Not_Test | B_Num | B_Both
+                 and then not (Els (K).Kind = Block and then Els (K).Op in B_Test | B_Not_Test | B_As | B_Num | B_Both)
                then
                   Append (Buf, Ind & "let es_" & Sid & "_" & Img (K) & " = p.pos;");
                   Append (Buf, LF);
@@ -3065,9 +3144,9 @@ package body HBNF_Rust is
                      if E.Op = B_As then
                         --  where the text of the element before began, after the blanks
                         Append (Buf, Ind & "{ let k_ = p.pos; "
-                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (Base_Of (K))
                                & "; p.skip_ws(); " else "")
-                          & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (Base_Of (K)))
                           & "; p.pos = k_; "
                           & (if E.Id /= 1 or else Local_Reader (To_String (E.Ctx))
                              then Tag_Var ("cp", E.Ctx) & " = st_; " & Tag_Var ("cl", E.Ctx) & " = k_ - st_; "
@@ -3123,7 +3202,7 @@ package body HBNF_Rust is
                      elsif E.Op = B_Num then
                         --  the number the element before matched
                         Append (Buf, Ind & "{ let b_ = p.text.as_bytes(); let mut v_: i64 = 0;"
-                          & " for q_ in es_" & Sid & "_" & Img (K - 1) & "..p.pos { v_ = v_ * 10 + (b_[q_] - b'0') as i64; }"
+                          & " for q_ in es_" & Sid & "_" & Img (Base_Of (K)) & "..p.pos { v_ = v_ * 10 + (b_[q_] - b'0') as i64; }"
                           & " p.fs[p.fb + "
                           & Img (Natural'Max (0, HBNF_Grammar.Slot_Of
                               (To_String (Rules (Owner).Name), To_String (E.Ctx))))
@@ -3133,9 +3212,9 @@ package body HBNF_Rust is
                         --  `a intersect b` and `x in ( "a" "b" )`: the text the element before matched is read again by the rule b (or is
                         --  one of the literals and rules written), ending where it ended; the parser reads the text cut at k_ meanwhile
                         Append (Buf, Ind & "{ let k_ = p.pos; "
-                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (Base_Of (K))
                                & "; p.skip_ws(); " else "")
-                          & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (Base_Of (K)))
                           & "; p.pos = k_;");
                         Append (Buf, LF);
                         if E.Look.First_Element.Kind = Group then
@@ -3171,9 +3250,9 @@ package body HBNF_Rust is
                      elsif E.Op in B_Test | B_Not_Test then
                         --  `x ? types` / `x ?! types`: the text x matched is (not) in the context
                         Append (Buf, Ind & "{ let k_ = p.pos; "
-                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (K - 1)
+                          & (if Skips then "p.pos = es_" & Sid & "_" & Img (Base_Of (K))
                                & "; p.skip_ws(); " else "")
-                          & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (K - 1))
+                          & "let st_ = " & (if Skips then "p.pos" else "es_" & Sid & "_" & Img (Base_Of (K)))
                           & "; p.pos = k_;");
                         Append (Buf, LF);
                         Append (Buf, Ind & "  if " & (if E.Op = B_Test then "!" else "")
@@ -3182,6 +3261,56 @@ package body HBNF_Rust is
                         Append (Buf, Ind & "    p.pos = st_; let e_ = p.fail(""a name "
                           & (if E.Op = B_Test then "in `" else "not in `") & To_String (E.Ctx)
                           & "`""); p.pos = k_; return Err(e_); } }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Fact then
+                        --  `=> tag.attr = tag2`: the text kept as tag2 is the attribute `attr` of the name kept as tag
+                        Append (Buf, Ind & "{ let full_ = p.text; p.cx_fact_put(" & Ctx_Const (To_String (E.Path)) & ", "
+                          & Tag_Slice (To_String (E.Ctx)) & ", " & Tag_Slice (To_String (E.Code)) & "); }");
+                        Append (Buf, LF);
+                     elsif E.Op = B_Reread then
+                        --  `=> template [with tag.attr = tag2]`: the match is replaced by the template, and the parse starts
+                        --  again on the new text (the request is `p.rr`, and parse_text splices and goes round)
+                        declare
+                           W  : constant String := To_String (E.Path);
+                           Eq : Natural := 0;
+                        begin
+                           Append (Buf, Ind & "{ let k_ = p.pos; "
+                             & (if Skips then "p.pos = sg_" & Sid & "; p.skip_ws(); " else "")
+                             & "let st_ = " & (if Skips then "p.pos" else "sg_" & Sid) & "; p.pos = k_;");
+                           Append (Buf, LF);
+                           Append (Buf, Ind & "  let full_ = p.text; let mut sb_ = String::new();");
+                           Append (Buf, LF);
+                           Append (Buf, Tmpl_Rust (To_String (E.Code)));
+                           if W /= "" then
+                              for I in W'Range loop
+                                 if W (I) = '=' and then Eq = 0 then
+                                    Eq := I;
+                                 end if;
+                              end loop;
+                              declare
+                                 L : constant String := Ada.Strings.Fixed.Trim (W (W'First .. Eq - 1), Ada.Strings.Both);
+                                 A : constant String := Ada.Strings.Fixed.Trim (W (Eq + 1 .. W'Last), Ada.Strings.Both);
+                                 D : Natural := 0;
+                              begin
+                                 for I in L'Range loop
+                                    if L (I) = '.' then
+                                       D := I;
+                                    end if;
+                                 end loop;
+                                 Append (Buf, Ind & "  if let Some(ps_) = p.cx_fact_get(" & Ctx_Const (L (D + 1 .. L'Last)) & ", "
+                                   & Tag_Slice (L (L'First .. D - 1)) & ") { sb_ = bnf_subst(&sb_, &ps_, "
+                                   & Tag_Slice (A) & "); }");
+                                 Append (Buf, LF);
+                              end;
+                           end if;
+                           Append (Buf, Ind & "  p.rr = Some((st_, k_, sb_)); return Err(p.fail(""a rewrite"")); }");
+                           Append (Buf, LF);
+                        end;
+                     elsif E.Op in B_Add | B_Remove then
+                        --  `=> set += tag` and `set -= tag`: the text kept as the tag (Ctx) goes into the set (Path), or out of it
+                        Append (Buf, Ind & "{ let full_ = p.text; p.cx_" & (if E.Op = B_Add then "add(" else "del(")
+                          & Ctx_Const (To_String (E.Path)) & ", &full_[" & Tag_Var ("cp", E.Ctx) & " .. "
+                          & Tag_Var ("cp", E.Ctx) & " + " & Tag_Var ("cl", E.Ctx) & "]); }");
                         Append (Buf, LF);
                      elsif E.Op = B_Bind then
                         declare
@@ -4358,6 +4487,7 @@ package body HBNF_Rust is
               (if Is_Hosted then "bit: usize, " else ""));
             HBNF_Template.Put (V, "ctx_field",
               (if Ctx_On then ", cx: [Cx; NCTX]" else "")
+              & (if HBNF_Grammar.Uses_Reread then ", rr: Option<(usize, usize, String)>" else "")
               & (if HBNF_Grammar.Uses_Frames then ", fs: Vec<i64>, fb: usize" else "")
               & (if Any_Tree (Rules) then ", td: usize" else ""));
             HBNF_Template.Put (V, "first_char",
@@ -4380,7 +4510,7 @@ package body HBNF_Rust is
                end loop;
                Append (Res,
                  "#[derive(Default)]" & LF
-                 & "struct Cx { map: std::collections::HashMap<String, u32>, log: Vec<String> }" & LF
+                 & "struct Cx { map: std::collections::HashMap<String, u32>, vals: std::collections::HashMap<String, String>, log: Vec<(String, u32, Option<Option<String>>)> }" & LF
                  & "impl<'a> P<'a> {" & LF
                  & "    fn cx_mark(&self) -> [usize; NCTX] {" & LF
                  & "        let mut m = [0usize; NCTX];" & LF
@@ -4391,19 +4521,96 @@ package body HBNF_Rust is
                  & "    fn cx_reset(&mut self, m: &[usize; NCTX]) {" & LF
                  & "        for c in 0..NCTX {" & LF
                  & "            while self.cx[c].log.len() > m[c] {" & LF
-                 & "                let s = self.cx[c].log.pop().unwrap();" & LF
-                 & "                if let Some(n) = self.cx[c].map.get_mut(&s) { *n -= 1; }" & LF
+                 & "                let (s, was, f) = self.cx[c].log.pop().unwrap();" & LF
+                 & "                if let Some(prev) = f {" & LF
+                 & "                    match prev { Some(v) => { self.cx[c].vals.insert(s.clone(), v); } None => { self.cx[c].vals.remove(&s); } }" & LF
+                 & "                }" & LF
+                 & "                self.cx[c].map.insert(s, was);" & LF
                  & "            }" & LF
                  & "        }" & LF
                  & "    }" & LF
                  & "    fn cx_add(&mut self, c: usize, s: &str) {" & LF
-                 & "        self.cx[c].log.push(s.to_string());" & LF
-                 & "        *self.cx[c].map.entry(s.to_string()).or_insert(0) += 1;" & LF
+                 & "        let was = self.cx[c].map.get(s).copied().unwrap_or(0);" & LF
+                 & "        self.cx[c].log.push((s.to_string(), was, None));" & LF
+                 & "        self.cx[c].map.insert(s.to_string(), was + 1);" & LF
+                 & "    }" & LF
+                 & "    // taking a name out is an entry that says so, so a mark still undoes it (the newest entry of a name wins)" & LF
+                 & "    #[allow(dead_code)]" & LF
+                 & "    fn cx_del(&mut self, c: usize, s: &str) {" & LF
+                 & "        let was = self.cx[c].map.get(s).copied().unwrap_or(0);" & LF
+                 & "        self.cx[c].log.push((s.to_string(), was, None));" & LF
+                 & "        self.cx[c].map.insert(s.to_string(), 0);" & LF
+                 & "    }" & LF
+                 & "    // a fact is an entry of its own context with a value: undone with the match, like an add; the newest entry of a name wins" & LF
+                 & "    #[allow(dead_code)]" & LF
+                 & "    fn cx_fact_put(&mut self, c: usize, s: &str, v: &str) {" & LF
+                 & "        let was = self.cx[c].map.get(s).copied().unwrap_or(0);" & LF
+                 & "        let prev = self.cx[c].vals.get(s).cloned();" & LF
+                 & "        self.cx[c].log.push((s.to_string(), was, Some(prev)));" & LF
+                 & "        self.cx[c].map.insert(s.to_string(), was + 1);" & LF
+                 & "        self.cx[c].vals.insert(s.to_string(), v.to_string());" & LF
+                 & "    }" & LF
+                 & "    #[allow(dead_code)]" & LF
+                 & "    fn cx_fact_get(&self, c: usize, s: &str) -> Option<String> {" & LF
+                 & "        if self.cx_has(c, s) { self.cx[c].vals.get(s).cloned() } else { None }" & LF
                  & "    }" & LF
                  & "    fn cx_has(&self, c: usize, s: &str) -> bool {" & LF
                  & "        self.cx[c].map.get(s).map_or(false, |n| *n > 0)" & LF
                  & "    }" & LF
-                 & "}" & LF & LF);
+                 & "}" & LF
+                 & "" & LF & LF);
+               if HBNF_Grammar.Uses_Reread then
+                  Append (Res,
+                    "" & LF
+                    & "// `with tag.params = tag2`: in b, each name of the comma-separated list ps is replaced by the matching argument of the list" & LF
+                    & "// as (split at the commas outside brackets and strings, blanks trimmed); both lists may be kept with their outer brackets." & LF
+                    & "#[allow(dead_code)]" & LF
+                    & "fn bnf_subst(b: &str, ps: &str, as_: &str) -> String {" & LF
+                    & "    let mut ps = ps;" & LF
+                    & "    let mut as_ = as_;" & LF
+                    & "    if ps.len() >= 2 && ps.starts_with('(') && ps.ends_with(')') { ps = &ps[1..ps.len() - 1]; }" & LF
+                    & "    if as_.len() >= 2 && as_.starts_with('(') && as_.ends_with(')') { as_ = &as_[1..as_.len() - 1]; }" & LF
+                    & "    let pnames: Vec<&str> = ps.split(',').map(|x| x.trim()).filter(|x| !x.is_empty()).collect();" & LF
+                    & "    let mut avals: Vec<&str> = Vec::new();" & LF
+                    & "    let ab = as_.as_bytes();" & LF
+                    & "    let (mut depth, mut q, mut st) = (0i32, 0u8, 0usize);" & LF
+                    & "    for i in 0..=ab.len() {" & LF
+                    & "        if i < ab.len() {" & LF
+                    & "            let c = ab[i];" & LF
+                    & "            if q != 0 { if c == q { q = 0; } }" & LF
+                    & "            else if c == b'""' || c == b'\'' { q = c; }" & LF
+                    & "            else if c == b'(' { depth += 1; }" & LF
+                    & "            else if c == b')' { depth -= 1; }" & LF
+                    & "        }" & LF
+                    & "        if i == ab.len() || (ab[i] == b',' && depth == 0 && q == 0) {" & LF
+                    & "            avals.push(as_[st..i].trim());" & LF
+                    & "            st = i + 1;" & LF
+                    & "        }" & LF
+                    & "    }" & LF
+                    & "    let bb = b.as_bytes();" & LF
+                    & "    let mut out = String::new();" & LF
+                    & "    let mut i = 0;" & LF
+                    & "    while i < bb.len() {" & LF
+                    & "        let c = bb[i];" & LF
+                    & "        if c == b'_' || c.is_ascii_alphabetic() {" & LF
+                    & "            let mut j = i;" & LF
+                    & "            while j < bb.len() && (bb[j] == b'_' || bb[j].is_ascii_alphanumeric()) { j += 1; }" & LF
+                    & "            let w = &b[i..j];" & LF
+                    & "            match pnames.iter().position(|p| *p == w) {" & LF
+                    & "                Some(k) if k < avals.len() => out.push_str(avals[k])," & LF
+                    & "                _ => out.push_str(w)," & LF
+                    & "            }" & LF
+                    & "            i = j;" & LF
+                    & "        } else {" & LF
+                    & "            let ch = b[i..].chars().next().unwrap();" & LF
+                    & "            out.push(ch);" & LF
+                    & "            i += ch.len_utf8();" & LF
+                    & "        }" & LF
+                    & "    }" & LF
+                    & "    out" & LF
+                    & "}" & LF
+                    & "" & LF & LF);
+               end if;
             end;
          end if;
          if HBNF_Grammar.Uses_Frames then
@@ -4872,6 +5079,7 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
          HBNF_Template.Put (V, "text_init", (if Is_Hosted then ": Txt(text)" else ""));
          HBNF_Template.Put (V, "bit_init", (if Is_Hosted then "bit: 0, " else ""));
          HBNF_Template.Put (V, "ctx_init", (if Ctx_On then ", cx: Default::default()" else "")
+                       & (if HBNF_Grammar.Uses_Reread then ", rr: None" else "")
                        & (if HBNF_Grammar.Uses_Frames
                           then (if HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)) > 0
                                 then ", fs: vec![0; " & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name))) & "], fb: 0"
@@ -4899,7 +5107,7 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
          HBNF_Template.Put (V, "trail_ws",
            (if R.Whitespace /= Null_Unbounded_String
             then "    p.skip_ws();" & LF else ""));
-         return HBNF_Template.Render_File ("rust_parse_text", V);
+         return HBNF_Template.Render_File ((if HBNF_Grammar.Uses_Reread then "rust_parse_text_rr" else "rust_parse_text"), V);
       end Parse_Text_Src;
 
       Lexer  : constant String := Parse_Text_Src;
