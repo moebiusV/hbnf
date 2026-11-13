@@ -1,0 +1,44 @@
+; znclog as a transducer: each line of a log is replaced by one line `KIND<TAB>field<TAB>field...`, the fields as soju's Go code
+; (upstream/soju/msgstore/znclog/reader.go, UnmarshalLine with events on) takes them from the line, so that the result can be
+; compared with what that code does (corpus/znclog/oracle.py is that code's splitting in Python; tests/znclog.sh runs 30000 lines
+; of fuzz through both).  The text after a delimiter is free and may hold the delimiter: the sender of a message is what is before the
+; first "> ", and the rest of the line is text whatever it holds (`<a> b> c`).  hbnf has no lexer to confuse: it reads the characters.
+;   Two things the grammar is written around: a rule named `word` is the grammar's own definition of a word, which keyword-like literals
+; (those that begin with a letter) are matched by, so none is defined here; and the choice between a converted line and one still to convert
+; is a rule (`entry`), since a rewrite is read again by the outermost rule that began where its text began.
+prefix none
+whitespace none
+include "../../grammars/common.hbnf"
+
+log   = *entry
+entry = canon | line
+canon = canon-kind *~LF LF
+canon-kind = "PRIVMSG" | "NOTICE" | "ACTION" | "Joins:" | "Parts:" | "Quits:" | "NICK" | "KICK" | "TOPIC" | "MODE" | "SKIP"
+stamp = "[" 2*2DIGIT ":" 2*2DIGIT ":" 2*2DIGIT "] "
+lend  = LF | !OCTET
+
+line = stamp "<" sender-gt as S "> " text as T lend                                              => "PRIVMSG\t" S "\t" T "\n"
+     | stamp "-" sender-dash as S "- " text as T lend                                            => "NOTICE\t" S "\t" T "\n"
+     | stamp "* " sender-sp as S " " text as T lend                                              => "ACTION\t" S "\t" T "\n"
+     | stamp "*** " join-word as J " " nick as N " " [ "(" ] user as U "@" host as H [ ")" ] " " [ "(" ] reason-body as R [ ")" ] lend   => J "\t" N "\t" U "\t" H "\t" R "\n"
+     | stamp "*** " join-word as J " " nick as N " " [ "(" ] user as U "@" host as H [ ")" ] lend                                         => J "\t" N "\t" U "\t" H "\t\n"
+     | stamp "*** " !join-start nick as N " is now known as " text as T lend                     => "NICK\t" N "\t" T "\n"
+     | stamp "*** " !join-start nick as N " was kicked by " kicker as K " " [ "(" ] reason-body as R [ ")" ] lend   => "KICK\t" N "\t" K "\t" R "\n"
+     | stamp "*** " !join-start nick as N " changes topic to " [ "'" ] topic-body as T [ "'" ] lend              => "TOPIC\t" N "\t" T "\n"
+     | stamp "*** " !join-start nick as N " sets mode: " text as T lend                         => "MODE\t" N "\t" T "\n"
+     | stamp text lend                                                                           => "SKIP\n"
+
+join-start = join-word " "
+join-word  = "Joins:" | "Parts:" | "Quits:"
+sender-gt   = *( ~( ">" | LF ) | ">" !" " )
+sender-dash = *( ~( "-" | LF ) | "-" !" " )
+sender-sp   = *~( " " | LF )
+nick    = *~( " " | LF )
+kicker  = *~( " " | LF )
+user    = *~( "@" | " " | LF )
+host    = *( ~( ")" | " " | LF ) | ")" &wordchar )
+reason-body = *( ~( ")" | LF ) | ")" &linechar )
+topic-body  = *( ~( "'" | LF ) | "'" &linechar )
+text    = *~LF
+wordchar = ~( " " | LF )
+linechar = ~LF
