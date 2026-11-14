@@ -43,7 +43,9 @@ Layouts, languages and builders are therefore one kind of thing (R721): "grammar
 as part of its running, generate .o files that are linked in".  A consequence the author names: "theoretically we could have multiple
 languages interoperating in hbnf (not that we want to at this point, but it will be possible)".  Not a goal now.  The front end is one
 of these too (R722: "the ada reader will also become an hbnf grammar plus epilogue.. or minimal epilogue that links in with the current
-optimization etc code that is in ada").
+optimization etc code that is in ada").  Being a grammar, the reader can be one of several: "so we can have multiple readers, for each bnf
+variant we support" (R723), named as "ebnf, abnf, ybnf, hbnf etc" (R724).  Where the readers live and how one is chosen for a file are
+details tbd; every reader emits the same IR.
 
 Details tbd for the builder: the form of the packaging command, what is packaged for each language, what wiring and packaging each
 language needs, and whether that knowledge lives in `builders/` or in the language directory (R614).

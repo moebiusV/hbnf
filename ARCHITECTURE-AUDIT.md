@@ -36,7 +36,8 @@ Status vocabulary (the author's rule): a decision stays a decision when its deta
    Layouts, languages and builders are one kind of thing: grammars and epilogues that hbnf uses as part of itself while running,
    compiled to `.o` files that are linked in; several languages could therefore interoperate in hbnf, possible but not a goal now.  R721.
    The Ada reader will also become an hbnf grammar plus an epilogue, possibly a minimal one that links in the existing Ada analysis
-   and optimisation code.  R722.
+   and optimisation code.  R722.  There can be several readers, one for each BNF variant hbnf supports: "ebnf, abnf, ybnf, hbnf etc".
+   R723, R724.
 9. **"Jets" is fine, "it is a term of art"** (R713): the removal of the word in R352 is withdrawn.
 
 Details tbd: what wiring and packaging each language needs and the form of the packaging command (R718, R719), whether the layout's output is a different IR format or the same one, how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),

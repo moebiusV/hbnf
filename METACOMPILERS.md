@@ -85,7 +85,7 @@ itself advises that conditional assignment be used "whenever possible".
 | **Output** | assembly for an interpreter | object code through typed objects | none (strings) | a typed tree; round-trip printing; values and flat tapes written as the parse proceeds (`%emit`, `layout tape`); the rewrite rules `->`, `=>` and `=>>` (a grammar that writes its output: COBOL `COPY`, the C preprocessor) |
 | **Fresh names** | `*1`, `*2` per run of an equation | `LOCAL R IN "..."`: a unique name per use | n/a | none yet |
 | **Grammar grows** | edit the compiler's own source | syntax statements inside the program | patterns built at run time | `include`, `dialect`, `%grammar "file"` |
-| **Self-hosting** | yes | yes | no | not yet (`hbnf_schema.hbnf` is a grammar for config files, not for HyperBNF's own notation); decided 2026-11-14 that the language back ends become hbnf rewrite grammars compiled by hbnf itself (`LANGUAGES.md`, R708 to R712; not built) |
+| **Self-hosting** | yes | yes | no | not yet (`hbnf_schema.hbnf` is a grammar for config files, not for HyperBNF's own notation); decided 2026-11-14 that the language back ends become hbnf rewrite grammars compiled by hbnf itself (`LANGUAGES.md`, R708 to R712; not built); decided the same day that the Ada reader also becomes an hbnf grammar plus an epilogue (R722), so hbnf describes its own notation, with one reader per BNF variant: ebnf, abnf, ybnf, hbnf and others (R723, R724); not built |
 
 ## Your hunch about `%scan` and `%action`: yes, and the names are precedent
 
