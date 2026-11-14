@@ -1,10 +1,10 @@
 # The generator pipeline: operations, layouts, languages
 
-Status: **Decided** (R583, R608, R703, R704, R708 to R712 of `decision-register.md`); **not built**; **details tbd**.  The author's
+Status: **Decided** (R583, R608, R703, R704, R708 to R724 of `decision-register.md`); **not built**; **details tbd**.  The author's
 words of 2026-11-14 are the authority where this file and any other document differ: "The pipeline will go from the front end that
 creates the 40 operations passes it to the layout transformer rewriter, and then it will be passed to the backend language.  Rewrite
 transformer" (R708); "the languages/ hbnf dir would have grammar together with epilogue that has all the native code needed to compile
-standalone .o file, then the ada could just link in the .o using a standard interface, which would make supporting another language
+standalone .o file then the ada could just link in the .o using a standard interface which would make supporting another language
 just a matter of dropping another language into the languages/ dir" (R703); "the original goal for hbnf is to support a bunch of
 languages besides the current 4" (R703).  What is decided is the shape below; what is marked **details tbd** or **the implementer's
 proposal** is not a decision.
@@ -14,7 +14,7 @@ proposal** is not a decision.
 All the stages are written as **hbnf grammars with epilogues, linked in as `.o` files** (R714): "so it is a pipeline, hbnf grammars plus
 epilogues and linked in .o files will a) parse the grammars and emit optimized ir b) layout grammars take the ir and transform it into
 the layout form c) takes the output of layout, possibly a different ir format, possibly not, and transforms it from the 40 operations
-into actual code".  Stage (a) is too (R722): the Ada reader becomes an hbnf grammar plus an epilogue, a minimal one that links in the existing Ada analyses and
+into actual code".  Stage (a) is too (R722): the Ada reader becomes an hbnf grammar plus an epilogue, possibly a minimal one that links in the existing Ada analyses and
 optimisation code.  Nothing of this is built: the reader is Ada today (`hbnf_grammar.adb`).
 
 1. **Front end.**  The reader, the analyses (compilability, lookahead, contexts, facts) and the optimisations turn the grammar into
@@ -24,8 +24,8 @@ optimisation code.  Nothing of this is built: the reader is Ada today (`hbnf_gra
 3. **Language transformer** (R710).  The grammars under `languages/` are **rewrite grammars**, one per target language.  ONE emitter
    back end chooses the grammar for the language (today it chooses a set of Mustache templates; afterwards the grammar), and that
    grammar rewrites the layout-shaped IR into source text.  This replaces the Mustache templates and the four per-language Ada
-   emitters.  "The templates themselves do the rewrites; the templates will be written externally and then used like an interpretive
-   language."
+   emitters.  "I wanted the templates themselves to do the rewrites. The templates will be written externally. And then used like an
+   interpretive language." (R710)
 
 4. **Builder** (R715; R610 to R618, R634).  The build system chosen by the `build` directive or by `project.conf` (standalone, make,
    cmake, cargo, autoconf, ninja and the rest, each a grammar in `builders/`) is applied after the language stage.  Whether a builder
@@ -45,7 +45,7 @@ languages interoperating in hbnf (not that we want to at this point, but it will
 of these too (R722: "the ada reader will also become an hbnf grammar plus epilogue.. or minimal epilogue that links in with the current
 optimization etc code that is in ada").  Being a grammar, the reader can be one of several: "so we can have multiple readers, for each bnf
 variant we support" (R723), named as "ebnf, abnf, ybnf, hbnf etc" (R724; "ybnf is the yacc dialect").  Where the readers live and how one is chosen for a file are
-details tbd; every reader emits the same IR.
+details tbd; that every reader emits the same IR is the assistant's reading (R723).
 
 Details tbd for the builder: the form of the packaging command, what is packaged for each language, what wiring and packaging each
 language needs, and whether that knowledge lives in `builders/` or in the language directory (R614).
@@ -67,7 +67,7 @@ whether layouts nest under languages (R614).
 | part | today | size |
 |---|---|---|
 | the grammar side (reader, analyses, lookahead, contexts, facts, rewrites) | Ada, shared by every backend | one copy |
-| a backend that writes the parser | `hbnf_c.adb` 13,122 lines, `hbnf_ada.adb` 7,149, `hbnf_zig.adb` 6,224, `hbnf_rust.adb` 5,446 | one copy **per language** |
+| a backend that writes the parser | `hbnf_c.adb` 13,120 lines, `hbnf_ada.adb` 7,149, `hbnf_zig.adb` 6,224, `hbnf_rust.adb` 5,446 | one copy **per language** |
 | the text those backends write | 71 templates (45 of them C's, 9 Rust, 8 Zig, 9 Ada) and, in the Ada, about 2,240 (C), 1,310 (Ada), 956 (Zig) and 763 (Rust) literal `Append` calls | mixed into the Ada |
 | the wire emitters | `hbnf_wire-{c,rust,zig,ada_lang}.adb` | one more copy per language |
 | a layout | `layouts/NAME/layout.hbnf` + headers (`tailq`, `rb`): a directory read as hbnf holding a `layout_ops` block of C; `ast` and `tape` are Ada in the generator, and no layout file has a rewrite rule | a directory, not yet a rewrite grammar |
@@ -99,7 +99,7 @@ description of the parser**: the list of typed operations.  The layout grammar a
 
 ### The operations: hbnf-ir (what the four backends already agree on)
 
-The author's names for them are **hbnf-ir** and **hbnf-ops** (either); the file that defines them would be **`irops.hbnf`**: the
+Earlier drafts of this file called them **hbnf-ir** and **hbnf-ops** (no register row quotes those names); the file that defines them would be **`irops.hbnf`**: the
 roughly forty operations needed to implement a parser from hbnf grammar rules.  The list is *details tbd*; the count below is the
 implementer's, taken from the emitters: `rule(name, result type)`, `seq`, `choice(branches)` with the rollback marks, `repeat(min,
 max)`, `lit(text, case)`, `range(set)`, `call(rule, args)`, `ahead(not/and)`, `except`, `set_field(path)`, `list_push`, `ctx_add/has/mark/reset`,
@@ -133,7 +133,7 @@ transformer (stage 3) second.  Both are directories of rewrite grammars chosen a
 R703 says hbnf itself loads or links the `.o` "using a standard interface"; R712 says the `.o` files may be linked in rather than
 interpreted.  The following is one way to do it, written by the implementer; it is not a decision.
 
-A language exports a fixed C-ABI interface, found in `--languages=DIR`, `$HBNF_LANGUAGES`, the project, then `/usr/share`, as layouts are:
+A language exports a fixed C-ABI interface (the implementer's proposal), found in `--languages=DIR`, `$HBNF_LANGUAGES`, the project, then `/usr/share`; R617 decides installing under `/usr/share` with project overrides, which is not built, and today layouts are found through `$HBNF_LAYOUTS` or beside the templates:
 
 ```
 const hb_lang_info *hb_lang_info(void);            /* name, file extension, interface version, capabilities (has goto, closures) */
@@ -183,16 +183,16 @@ this revision).
 
 ## What the implementer builds next
 
-Until step 1 exists, a new feature is written in C first and in the others only when asked, and says so.  The preprocessor (`#`, `##`,
+Until step 1 exists, the implementer's stopgap (proposed here, not the author's; R702 says all jet syntax must work for all supported languages) is that a new feature is written in C first and in the others only when asked, and says so.  The preprocessor (`#`, `##`,
 `__VA_ARGS__`) is C-grammar work and is unaffected.
 
-## Decided 2026-11-14 (R703, R704, R708 to R712)
+## Decided 2026-11-14 (R703, R704, R708 to R724)
 
 - The pipeline has three stages in this order: front end (the IR of about forty operations), layout transformer, language transformer
   (R708); layouts are rewrite grammars over the IR (R709); languages are rewrite grammars chosen by one emitter back end, replacing the
   Mustache templates and the per-language emitters (R710); the main mechanism is `->`, `=>`, `=>>`, and `%emit` stays for smaller things
   (R711); the grammars may be compiled to `.o` files and linked in (R712).
-- Reading B: hbnf itself loads or links the language's `.o` (R703).
+- hbnf itself loads or links the language's `.o` (R703).
 - The mismatch warning for native code becomes a real parse with each installed language's grammar, replacing the keyword guess of
   `Guess_Language` in `hbnf_compilable.adb`.  The guess stays until those grammars exist (R703).
 - The hbnf files in a language directory do what grammar rewrites can; the rest is `.o` files that hbnf links in.  The user chooses their

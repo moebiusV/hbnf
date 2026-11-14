@@ -9,9 +9,9 @@ Status vocabulary (the author's rule): a decision stays a decision when its deta
 
 ## Part 1. What the author decided
 
-### The generator pipeline (2026-11-14; R583, R608, R703, R704, R708 to R712)
+### The generator pipeline (2026-11-14; R583, R608, R703, R704, R708 to R724)
 
-1. **Front end.**  The grammar is read, checked and optimised into the IR: "the 40 operations" (hbnf-ir, hbnf-ops).  R708.
+1. **Front end.**  The grammar is read, checked and optimised into the IR: "the 40 operations" (called hbnf-ir or hbnf-ops in an earlier draft of `LANGUAGES.md`).  R708.
 2. **Layout transformer.**  The grammars under `layouts/` are rewrite grammars that transform the IR into its output form.  R709.
 3. **Language transformer.**  A `languages/` directory holds a rewrite grammar per target language; ONE emitter back end chooses it
    (today it chooses a set of Mustache templates; afterwards the grammar) and it rewrites the layout-shaped IR into source text.
@@ -36,9 +36,9 @@ Status vocabulary (the author's rule): a decision stays a decision when its deta
    Layouts, languages and builders are one kind of thing: grammars and epilogues that hbnf uses as part of itself while running,
    compiled to `.o` files that are linked in; several languages could therefore interoperate in hbnf, possible but not a goal now.  R721.
    The Ada reader will also become an hbnf grammar plus an epilogue, possibly a minimal one that links in the existing Ada analysis
-   and optimisation code.  R722.  There can be several readers, one for each BNF variant hbnf supports: "ebnf, abnf, ybnf (the yacc dialect), hbnf etc".
+   and optimisation code.  R722.  There can be several readers, one for each BNF variant hbnf supports: "ebnf, abnf, ybnf, hbnf etc" (R724; "ybnf is the yacc dialect").
    R723, R724.  Today these are dialects of the one Ada reader (`dialect` directive, `--dialect=bnf|ebnf|abnf|ybnf|hbnf`,
-   `hbnf_grammar.adb:16227`), so this moves the choice from a flag to one reader grammar per variant.
+   `Set_Dialect` and the `dialect` line in `hbnf_grammar.adb`), so this moves the choice from a flag to one reader grammar per variant.
 9. **"Jets" is fine, "it is a term of art"** (R713): the removal of the word in R352 is withdrawn.
 
 Details tbd: what wiring and packaging each language needs and the form of the packaging command (R718, R719), whether the layout's output is a different IR format or the same one, how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),
@@ -46,15 +46,16 @@ the loading interface.  The callback interface in `LANGUAGES.md` (`hb_lang_*`, `
 
 ### Language targets and notation (2026-11-11; R594 to R602)
 
-- A complete C++23 front end: full syntax, Annex A disambiguation, a real preprocessor.  R594, R595, R598.
+- A complete C++23 front end including the preprocessor: R594, R595, R598 ("Annex A disambiguation" is the assistant's wording, not in those rows).
 - The grammar reads like the printed standard: `opt`, `X-seq`, `X-list`, "one of" lists, nesting-aware angle brackets.  Approved,
   R594; details tbd.  Only `one of` is built.
-- The preprocessor is rewrites that re-enter the grammar (R595); COBOL COPY REPLACING taught that substitutions stay local, explicit
-  and fed back to the grammar (R597).
+- The preprocessor as rewrites: the author guessed "that the rewrite rules will make the pre processor fairly straightforward"
+  (R595); R597 asks what COBOL COPY REPLACING could teach, and the lesson (substitutions local, explicit, fed back to the grammar) is
+  the assistant's answer, not a decision.
 - Set-logic operators, with sequence and "sequence does not matter" both expressible (R601, R604 to R607, R643 to R689).
 - 5,000 lines is a **soft** limit, **per grammar**, not a total (R600).
-- A separate front end per C++ version (R599); ALGOL 68 (R596); COBOL, full coverage of old and modern dialects (R602).
-- All four backends are equals for the same grammar and epilogue (R698, R702).
+- A separate front end per C++ version (R599); ALGOL 68 (R598); COBOL, full coverage of old and modern dialects (R602).
+- All four backends alike: "bring ada backend up to par before anything else" (R698); "all jet syntax must work for all supported languages" (R702).
 
 What the author did not say, though documents attribute it to him: "oldest first" for C++ versions; a "hard ceiling"; "shared
 infrastructure is outside the count" (the assistant's wording); a priority order of six steps (the assistant's handoff text listed one;
@@ -64,8 +65,8 @@ the author has not restated it; details tbd).
 
 | Point | What the documents said at 01e9b2f | What the code does |
 |---|---|---|
-| Build step | Documented in R610 to R618, R634, `TODO.md:101` and `decisions-and-status.md` (Build files), apart from the pipeline; `LANGUAGES.md` named `builders/` once. | Not built: no `builders/`, no `project.conf`, no `build` or `hbnfversion` directive in `hbnf_grammar.adb`. |
-| Three-stage pipeline | Stated nowhere as a pipeline.  `LANGUAGES.md` had stages 1 and 3, no layout stage, "Draft … Nothing here is built" over a section headed "Decided (R703)". | Not built.  `hbnf.adb:657-703` picks one of nine hand-written emitters by a string if-chain. |
+| Build step | Documented in R610 to R618, R634, the Build files item of `TODO.md` and `decisions-and-status.md` (Build files), apart from the pipeline; `LANGUAGES.md` named `builders/` once. | Not built: no `builders/`, no `project.conf`, no `build` or `hbnfversion` directive in `hbnf_grammar.adb`. |
+| Three-stage pipeline | Stated nowhere as a pipeline.  `LANGUAGES.md` had stages 1 and 3, no layout stage, "Draft … Nothing here is built" over a section headed "Decided (R703)". | Not built.  `hbnf.adb:657-703` picks one of five text emitters by a string if-chain (tree-sitter, c, rust, zig, ada) and `hbnf.adb:430-560` one of four wire emitters: nine hand-written emitters. |
 | IR of about forty operations | A prose list, `LANGUAGES.md:50-54`.  R3 and `decisions-and-status.md:1769` said "the ast is the ir … no separate IR stage" (DONE). | No such type.  Nearest: `Block_Op`, 27 source-construct members, `hbnf_grammar.ads:178-205`. |
 | Layouts are rewrite grammars over the IR | Not said.  `RFCPLAN.md:2645` "a layout … inserts the `%emit` blocks"; `ABNF.md:342` raw C with `@holes@`. | `ast` and `tape` are Ada (`Tape_Layout`, `hbnf_grammar.adb:15327-15772`).  `tailq`, `rb` are C macro tables read by the C backend only; neither file has a rewrite rule. |
 | Languages replace Mustache and the emitters | R583, R608 said so.  `RFCPLAN.md` 13b said `%emit` naming templates, "The shape is decided", labelled "Open"; README, `USENIXSUBMISSION.md:556-564`, `HISTORY.md:681`, commit 1133cf1 presented Mustache templates as the design. | 71 templates (45 C, 9 Rust, 8 Zig, 9 Ada) carry prologues, type declarations and fixed runtime text.  Per-rule logic is Ada string-building: about 2,240 `Append` calls in `hbnf_c.adb` (13,122 lines); Ada 7,149, Zig 6,224, Rust 5,446 lines. |
@@ -73,19 +74,20 @@ the author has not restated it; details tbd).
 | `=>`, `=>>`, `->` | `=>>` defined only in R693; `CONTEXTS.md:1283` said it was replaced; headings said "for the author to approve; nothing built". | Built in all four backends.  C continues reading in place; Rust, Zig, Ada restart the parse.  `hidden`, `hiding` and template functions are C only. |
 | Set logic | `decisions-and-status.md:795` IN THE AIR; `CONTEXTS.md` "nothing built"; absent from `ABNF.md`. | Built in all four (`one of`, `all of`, `some of`, `any of`, `choose`, `permute`, `intersect`, `in`/`not in`); `choose … with replacement` C only. |
 | Annex A `opt`, `X-seq`, `X-list` | Approved in R594, filed "to be shown", `CONTEXTS.md:1050`. | Not built; only `one of`. |
-| Preprocessor as rewrites | `decisions-and-status.md:560` "not started"; `RFCPLAN.md:2776` "an idea, not decided"; README "Next". | `corpus/c/cpp.hbnf`, 1,407 lines, about 1,190 of them native C; C backend only. |
+| Preprocessor as rewrites | `decisions-and-status.md:560` "not started"; `RFCPLAN.md:2777` "an idea, not decided"; README "Next". | `corpus/c/cpp.hbnf`, 1,407 lines at 01e9b2f, about 1,190 of them native C; C backend only. |
 | COBOL | `TODO.md`, `decisions-and-status.md`, `corpus/README.md` stale; `corpus/cobol/README.md` contradicted itself four times. | 792 lines in five files; baselines 2 / 0 / 1; fixed format in all four backends; COPY/REPLACE C only; no OO, no `>>IF`. |
 | Soft limit per grammar | Right everywhere. | Not measured.  Nothing says whether generated tables or native C count. |
 | Priority order | Repository: COBOL, preprocessor, ALGOL 68, C++ "oldest first".  "The plan of 2026-11-11, Phases 1–7" cited in five places; it is not in the repository. | Engine work, COBOL fixed format and COPY, then the preprocessor. |
+| Front end and readers (R722 to R724) | `METACOMPILERS.md:88` listed self-hosting as "not yet"; `RFCPLAN.md` step 13a plans a grammar for the notation (`hbnf.hbnf`) with no pointer to R722; the ledger entry "Grammar for HBNF itself" is TO DO. | No `hbnf.hbnf`.  The reader is Ada (`hbnf_grammar.adb`); BNF, EBNF, ABNF, YBNF and HyperBNF are dialects of that one reader, chosen by the `dialect` line or `--dialect=`. |
 | Four backends as equals | Not stated as a requirement; many stale "C only" statements. | See the rewrite row for what the other three still refuse. |
 
-Also found: ten decision rows in the register ended "open"; the word "jets" was removed by R352 and used again in R701 and R702 (settled by R713: it stays); the word
+Also found: eleven rows in the register ended "open" (ten decisions and one finding); the word "jets" was removed by R352 and used again in R701 and R702 (settled by R713: it stays); the word
 "layout" has three meanings (the output data structure, the shape of generated code, the pretty-printer hook type);
 `hbnf_schema.hbnf` is the obconf configuration grammar, not a schema of the notation; the documents carried local-machine inventories.
 
 ## Part 3. Corrections made on this branch (documents and comment text only)
 
-Each group is one commit.
+The groups are separate commits, except that `LANGUAGES.md` and `decision-register.md` share one; later commits record R713 onward.
 
 - **`LANGUAGES.md`**: the one authoritative statement; later the build step (R715) and the "all stages are hbnf grammars" statement
   (R714) were added.  Status "Decided; not built; details tbd"; the three stages in order; one
@@ -103,7 +105,7 @@ Each group is one commit.
   `USENIXSUBMISSION.md`, `HISTORY.md` (a dated forward note only), `grammars/README.md`, `corpus/README.md`, `corpus/c/README.md`,
   `corpus/cobol/README.md`): what is true today stated; Mustache and four-emitter descriptions say they are decided to be replaced;
   `ABNF.md` gained rows for `=> template`, `=>>`, facts, `hiding`, set logic; stale "C only" cells fixed.
-- **Code comments** in 23 files (`hbnf_grammar.ad[sb]`, `hbnf_compilable.ad[sb]`, `hbnf_c.adb`, `hbnf.adb`, `hbnf_wire*.ads`,
+- **Code comments** in 20 files (`hbnf_grammar.ad[sb]`, `hbnf_compilable.ad[sb]`, `hbnf_c.adb`, `hbnf.adb`, `hbnf_wire*.ads`,
   `hbnf_template.ads`, `hbnf_shape.ads`, `libhbnf.gpr`, tests, `cpp.hbnf`, `cobol.hbnf`): "C only so far / not built yet" statements the
   code contradicts, misdescriptions, the retired `list-head` spelling, a citation of a nonexistent CONTEXTS section 31.  No code line
   changed.  The `cpp.hbnf` header now says about 1,190 of roughly 1,400 lines are native C.
@@ -117,9 +119,9 @@ Code, not comments (not changed here):
 - `tests/lexer/look-ws.hbnf:4` includes an absolute path under a local home directory; `corpus/c/cpp-gnu.hbnf:418` has local build
   paths in its generated table (origin: `scripts/build-gcc.sh`).
 - Error and warning strings that still say "only the C backend generates" or "can be emitted in C so far":
-  `hbnf_compilable.adb:1393,1397,1460,1463,1548`, `hbnf.adb:349,365,375`; the operation list in the error at `hbnf_grammar.adb:13225`
+  `hbnf_compilable.adb` near lines 1393, 1397, 1461 and 1464, and `hbnf.adb` near lines 519 and 549; the operation list in the error near line 13220 of `hbnf_grammar.adb`
   omits `key` and `generate`.
-- `tests/consequence.sh` header and its Zig-refuses assertion look stale against the backends now generating facts and rewrites.
+- `tests/consequence.sh`: the comment on its `run()` function and the assertions that Zig and Ada refuse facts and rewrites look stale against the backends now generating them (its header was corrected).
 - Four templates are referenced by no Ada source: `c_alt_atend`, `c_alt_reset`, `c_seq_kind`, `c_seq_literal`.
 - `Class_Kind` is declared five times (`hbnf_c.adb` twice, Rust, Zig, Ada) although `hbnf_shape.ads` is meant to hold what the
   emitters share.

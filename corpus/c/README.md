@@ -97,7 +97,7 @@ The C preprocessor as a grammar: object and function macros with `#`, `##`, `__V
 `#include_next`, `#import`, `#embed`), `#line`, `#pragma once`, `_Pragma`, `#assert`, digraphs, trigraphs, the GNU predefined macros and the feature tests
 (`__has_include`, `__has_attribute`, `__has_builtin`, ...), and gcc's diagnostics.  Its tables of what gcc defines and answers are made from gcc by
 `tools/gen_gcc_tables.py` (`cpp-gnu.hbnf`, tied to the gcc named in its header: gcc 16.2.0).  The program is the parser and `tests/cpp-main.c`, which takes gcc's options
-(`-undef -nostdinc -trigraphs -I -D -U`); `cpp_output` makes the text a compiler's `-E` gives.  C backend only: of the 1,407 lines of `cpp.hbnf`, about 1,190 are native C in its prologue and epilogue (the lines between `{` and `}` at the start and end of the file) and about 215 are grammar; the rewrites (`=>`, `=>>`) call that C, and Rust, Zig and Ada refuse `hidden`, `hiding` and a template function.
+(`-undef -nostdinc -trigraphs -I -D -U`); `cpp_output` makes the text a compiler's `-E` gives.  C backend only: of the 1,409 lines of `cpp.hbnf`, about 1,190 are native C in its prologue and epilogue (the lines between `{` and `}` at the start and end of the file) and about 215 are grammar; the rewrites (`=>`, `=>>`) call that C, and Rust, Zig and Ada refuse `hidden`, `hiding` and a template function.
 
 How it is checked, with gcc the authority and clang compared:
 - `sh tests/cpp.sh` (`GCC=/path/to/gcc` for another gcc): every file of `tests/cpp` against gcc's tokens, clang's, and the C99 grammar's reading of the result;

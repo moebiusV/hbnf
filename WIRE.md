@@ -248,7 +248,7 @@ A wire grammar holds C in three places, none of which hbnf reads or rewrites:
 - `%emit{ code }` runs when the record is **written**, before its fields are, on a
   copy of it as `n`: it fills in what is computed (a checksum), and the caller's
   tree is not touched.  `HBNF_EMIT_FAIL ("text")` fails the write.  (In a text rule that declares a
-  value, `name :: type = ...`, `%emit` is another thing: it runs during the read, in the C backend only;
+  value, `name :: type = ...`, `%emit` is another thing: it runs during the read, in all four backends (R699, R700);
   `grammars/README.md`, "Values at recognition".)
 
 Rust, Zig and Ada have both, written in their own language: the grammar says

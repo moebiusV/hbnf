@@ -12,7 +12,7 @@ Parent: [All Projects](https://moebiusv.github.io/) | Git Repo: [github.com/moeb
 > `ast`, the default), a flat tape of words (`tape`, `runtime/hbnf_tape.h`), or BSD's
 > `sys/queue.h` and `sys/tree.h` containers (`tailq`, `rb`).  `%emit` blocks write the tape by hand
 > where a layout does not fit (`%emit` is for the smaller things; the main mechanism decided for
-> turning a grammar's tree into output is the rewrite rules `->`, `=>` and `=>>`).  The parsers read
+> the generator's own layout and language stages (R711) is the rewrite rules `->`, `=>` and `=>>`).  The parsers read
 > alternatives that begin alike once, and a ladder of binary operators with one look past its first
 > operand.  The code templates are rendered by the project's own Mustache package, `HBNF_Template`,
 > so libhbnf depends on nothing outside the GNAT runtime.  That is today's state, not the design:

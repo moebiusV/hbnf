@@ -605,8 +605,9 @@ package HBNF_Grammar is
    function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector;
 
    --  The top-level file's `language C|Rust|Zig|Ada`, or "C" when it has
-   --  none.  A scanner action's code for C is the rule's own (written in the file's language);
-   --  for the other backends it is the `<name> = Rust { ... }` (`Zig`, `Ada`) form, see Jet_Body.
+   --  none.  Untagged scanner code (`name = { ... }`) belongs to the backend of the file's language: in a C file, or one with
+   --  no `language` line, it is the C scanner (Rule.Jet_Code); in a `language Rust|Zig|Ada` file it is that backend's (see
+   --  Jet_Body) and C has none.  `name = Rust { ... }` (`Zig`, `Ada`, `C`) tags the code for a named backend, whatever the file says.
    function Language return String;
 
    --  The raw `{ ... }` code blocks before the rules (emitted before the

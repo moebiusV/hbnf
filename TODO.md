@@ -9,7 +9,7 @@ The speed work is paused.
 
 Corrected 2026-11-14: what was listed here as not built and has been built since (the `=>`, `=>>` and `->` rewrites, facts, the
 set-logic operators, fixed-format COBOL, COBOL `COPY`/`REPLACE`, the C preprocessor grammar) is marked as built below, and the
-generator pipeline decided on 2026-11-14 (front end, operations, layout transformer, language transformer; R708 to R712) is
+generator pipeline decided on 2026-11-14 (front end, operations, layout transformer, language transformer; R708 to R724 (the front end and the readers become grammars too, R722 to R724; the builders, R715 and R718 to R721)) is
 item 1 of section 3.  Where a line below says "C only", `ABNF.md` has the current backend support; the two disagree where this
 file was not rewritten.
 
@@ -84,7 +84,7 @@ Queued reader and generator fixes (the titles are the item titles):
 
 Unbuilt designs and open questions (a decision whose details are not worked out is a decision, marked "details tbd"):
 
-- [ ] **The generator pipeline, decided 2026-11-14 (R708 to R712; `LANGUAGES.md`), not built, details tbd:** the front end reads, checks and optimises the grammar into the intermediate representation (about 40 operations); the layout transformer, a rewrite grammar under `layouts/`, turns it into the layout's form; the language transformer, a rewrite grammar under `languages/` chosen by one emitter back end, turns that into source text with `->`, `=>` and `=>>`.  This replaces the Mustache templates and the per-language Ada emitters.  `%emit` stays for the smaller things; it is not the main mechanism here.  The grammars may be compiled to `.o` files and linked in, or run interpreted.  Details tbd: the exact list of operations, the loading interface (the C callbacks and `dlopen` of `LANGUAGES.md` are the implementer's proposal), and whether layouts nest under languages.
+- [ ] **The generator pipeline, decided 2026-11-14 (R708 to R724 (the front end and the readers become grammars too, R722 to R724; the builders, R715 and R718 to R721); `LANGUAGES.md`), not built, details tbd:** the front end reads, checks and optimises the grammar into the intermediate representation (about 40 operations); the layout transformer, a rewrite grammar under `layouts/`, turns it into the layout's form; the language transformer, a rewrite grammar under `languages/` chosen by one emitter back end, turns that into source text with `->`, `=>` and `=>>`.  This replaces the Mustache templates and the per-language Ada emitters.  `%emit` stays for the smaller things; it is not the main mechanism here.  The grammars may be compiled to `.o` files and linked in, or run interpreted.  Details tbd: the exact list of operations, the loading interface (the C callbacks and `dlopen` of `LANGUAGES.md` are the implementer's proposal), and whether layouts nest under languages.
 
 - [ ] The spellings `%label`, `%num`, `%action` and the rest (reserved words without `%`): open (CONTEXTS 10).
 - [x] `col` (0-based) and `where (cond)` as a postfix: built 2026-11-11 (24), in C, and ported to Rust, Zig and Ada the same day (fixed-format COBOL agrees with C on every test file in all four).
@@ -98,7 +98,7 @@ Unbuilt designs and open questions (a decision whose details are not worked out 
 - [ ] Error recovery and restarts, with the Common Lisp restart system as the model (idea; not started).
 - [ ] GLR: allowed by the scope note, pay only for what is used; not started.
 - [ ] Granular check reporting: per-item results (backend / arch / grammar / suite), sequential, easy to run one item.
-- [ ] Build files (every builder, not only make, cmake, cargo and autoconf: ninja and the rest too, the author 2026-11-11), `project.conf`, `builders/`, `languages/`, `hbnfversion`, helper code in `.c`/`.rs` files and `.o` files linked in, several grammars named by one project: decided in outline 2026-10-29 and 30 (decision register R608-R618, R619), nothing built (the plan of 2026-11-11, Phase 7; that plan is not in the repository).  `languages/` is the generator pipeline item above and `LANGUAGES.md`.
+- [ ] Build files (every builder, not only make, cmake, cargo and autoconf: ninja and the rest too, the author 2026-11-11), `project.conf`, `builders/`, `languages/`, `hbnfversion`, helper code in `.c`/`.rs` files and `.o` files linked in, several grammars named by one project: decided in outline 2026-10-29 and 30 (decision register R608-R618, R619, R715, R718 to R721), nothing built (the plan of 2026-11-11, Phase 7; that plan is not in the repository).  `languages/` is the generator pipeline item above and `LANGUAGES.md`.
 - [ ] The conf glue out of the templates into an included C header (the templates themselves are decided to be replaced, `LANGUAGES.md`).
 - [ ] **Port the C-only features to Rust, Zig, Ada, tree-sitter.**  Ported 2026-11-11 to 13: `where (col ...)` and the `Iter` atom, a rule of characters that repeats a rule or group holding a lookahead or a position test, contexts, facts, the `=>`/`=>>`/`->` rewrites, the set-logic operators, `%emit`/`%where`/`%bind`/`%action` (R686 to R702).  The list that was here before them, to be rechecked against `ABNF.md` before working from it: `as K`/`$K`, up references, `^.rule`, `bol`/`eol`, the scanned lookahead, overlay, unwind marks, the arena, the tape captures, the SSE2 loop, the context-set hash.  Still C only, as far as the sources show: `hidden`/`hiding` and a template function in a rewrite, `choose ... with replacement`, `->` with a fact, a function or `layout tape`, the `layout_ops` containers (`tailq`, `rb`), the keyword table, `--forks`, `cobol-copy.hbnf` and `cpp.hbnf`.  The rule for a new feature, until the language directories exist: in C first, in the others when asked (`LANGUAGES.md`).
 
@@ -112,7 +112,7 @@ Note:
 - [ ] **JavaScript** (ECMAScript 2023, Script and Module) and **CSS** (Syntax 3, Selectors 4): known gaps against V8 / tinycss2 (see their READMEs).
 - [ ] **SGML** and **GraphQL**: no oracle.
 - [ ] **Markdown to Typst** (`corpus/markdown`): a subset of CommonMark with tables; the `%spaces` bug (26/6).
-- [ ] ALGOL 68, C++ grammars: not started; targets since 2026-11-11 (the user): the order recorded here is COBOL (full front end, old and modern dialects), the C preprocessor (built since, C only: `corpus/c/cpp.hbnf`), ALGOL 68, then C++ one standard at a time, the preprocessor included (the words "oldest first" that stood here are the implementer's, not the author's; the order of the C++ versions is details tbd); about 5,000 lines of grammar and epilogue for each grammar, a soft limit (RFCPLAN step 20; decision register R594-R602).
+- [ ] ALGOL 68, C++ grammars: not started; targets since 2026-11-11 (the user); the order recorded here is the implementer's, not the author's: COBOL (full front end, old and modern dialects), the C preprocessor (built since, C only: `corpus/c/cpp.hbnf`), ALGOL 68, then C++ one standard at a time, the preprocessor included (the words "oldest first" that stood here are the implementer's, not the author's; the order of the C++ versions is details tbd); about 5,000 lines of grammar and epilogue for each grammar, a soft limit (RFCPLAN step 20; decision register R594-R602).
 - [ ] The C compiler: action/emit into LLVM ORC and liblld, as in the IMP72 project, then c79 to facetlang: not started.
 
 Prio:
@@ -123,7 +123,7 @@ Note:
 - [ ] `HISTORY.draft.md`, `RESUME-9b.md`, `RESUME-9c.md` (untracked): fold into HISTORY.md or delete.
 - [ ] `HyperBNF as leverage for LLMs` (the stated purpose): keep it written where it is and do not over-claim (memory note).
 - [ ] After the quiet rerun: README, WHY.md, HISTORY.md benchmark blocks are generated by `sh bench/update-docs.sh`; the hand-written prose around the XML table (README "JSON, TOML, YAML and XML against the parsers people use") should be re-read against the new numbers.
-- [ ] CONTEXTS.md: keep the status table up to date with each decision; its last update was 2026-11-05 and it is behind the decision register (R594 to R712).
+- [ ] CONTEXTS.md: keep the status table up to date with each decision; its status table was brought up to date on 2026-11-14 for R594 to R712; keep it current with each later decision (R713 onward).
 
 Prio:
 Note:
