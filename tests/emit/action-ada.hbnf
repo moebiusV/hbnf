@@ -1,0 +1,18 @@
+; %action { } for the Ada backend: the code is Ada, the body of a procedure with its declarations, `begin` and statements as a scanner's
+; is, over the node `N` once its children are done (children first, as C's walk is); `H.Line` is the line the node began on and
+; `Bind_Error (H, "...")` reports a mistake without stopping the walk: the read fails when it ends, with the first
+language Ada
+prefix none
+whitespace none
+{
+   with Action_State; with Ada.Strings.Unbounded;
+}
+config = *( entry )
+entry  = "set" " " word ";\n" %action{
+      begin
+         Action_State.Seen := Action_State.Seen + 1;
+         if Ada.Strings.Unbounded.Length (N.Word) > 3 then
+            Bind_Error (H, "`" & Ada.Strings.Unbounded.To_String (N.Word) & "` is too long");
+         end if;
+   }
+word   = 1*0x61..0x7a

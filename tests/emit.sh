@@ -305,5 +305,24 @@ fi
 if command -v gnatmake > /dev/null 2>&1 && ada_case where where_check; then
 	for c in 'abc;de!=true 2' 'abcd;de!=false 0' 'a;bcdef!=true 5' 'a;b=false 1'; do ada_run where where_check "${c%%=*}" "${c#*=}"; done
 fi
+# %action { } on a rule in Rust: the walk after the read runs it on each node, children first, with `h.line` and `h.bind_error(...)`
+if command -v rustc > /dev/null 2>&1 && rust_case action action_main; then
+	for c in 'set abc;\n=ok 1' 'set abc;\nset de;\n=ok 2' 'set abcdef;\nset ab;\n=error 1 `abcdef` is too long 2' \
+		'set ab;\nset abcdef;\nset toolong;\n=error 2 `abcdef` is too long 3'; do
+		rust_run action "${c%%=*}" "${c#*=}"
+	done
+fi
+if command -v zig > /dev/null 2>&1 && zig_case action action_main; then
+	for c in 'set abc;\n=ok 1' 'set abc;\nset de;\n=ok 2' 'set abcdef;\nset ab;\n=error 1 `abcdef` is too long 2' \
+		'set ab;\nset abcdef;\nset toolong;\n=error 2 `abcdef` is too long 3'; do
+		zig_run action "${c%%=*}" "${c#*=}"
+	done
+fi
+if command -v gnatmake > /dev/null 2>&1 && ada_case action action_check; then
+	for c in 'set abc;\n=ok 1' 'set abc;\nset de;\n=ok 2' 'set abcdef;\nset ab;\n=error 1 `abcdef` is too long 2' \
+		'set ab;\nset abcdef;\nset toolong;\n=error 2 `abcdef` is too long 3'; do
+		ada_run action action_check "${c%%=*}" "${c#*=}"
+	done
+fi
 [ $fail = 0 ] && echo "emit: OK (types read; %emit analysed and generated in C, Ada, Zig and Rust, each retry refused)"
 exit $fail

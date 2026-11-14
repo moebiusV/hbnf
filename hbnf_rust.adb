@@ -908,8 +908,28 @@ package body HBNF_Rust is
       return N;
    end Alt_Labels_Count;
 
-   function Emit (Rules : Rule_Vectors.Vector) return String is
+   --  Whether a text rule has an `%action { }`; the nodes then carry where they began (`_pos`), so that the action says the line.
+   function Any_Text_Action (Rules : Rule_Vectors.Vector) return Boolean is
+   begin
+      for R of Rules loop
+         if R.Action_Code /= Null_Unbounded_String then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Any_Text_Action;
 
+   function Force_Spans (Rules : Rule_Vectors.Vector) return Boolean is
+   begin
+      if Any_Text_Action (Rules) and then not Is_Hosted then
+         Spans_On := True;
+      end if;
+      return Spans_On;
+   end Force_Spans;
+
+   function Emit (Rules : Rule_Vectors.Vector) return String is
+      Spans_Forced : constant Boolean := Force_Spans (Rules);
+      pragma Unreferenced (Spans_Forced);
       N : constant Natural := Natural (Rules.Length);
 
       Infos : Info_Vectors.Vector;
@@ -1394,7 +1414,7 @@ package body HBNF_Rust is
          --  The %actions of the bit rules a text rule holds, run after the whole
          --  text has been read: bnf_act_<rule> walks a node, children first, and
          --  calls the walk_<bit rule> of each bit rule it holds.
-         if Is_Hosted and then Hosted_Acts then
+         if (Is_Hosted and then Hosted_Acts) or else (not Is_Hosted and then Any_Text_Action (Rules)) then
             declare
                function Walked (Name : String) return Boolean is
                  (Find (Rules, Name) = 0
@@ -1494,9 +1514,35 @@ package body HBNF_Rust is
                                Back_Target (Backs, Owner, To_String (M.Name)),
                                "n." & Rust_Field (To_String (M.Name)), Buf, "    ");
                   end loop;
+                  if Rules (Owner).Action_Code /= Null_Unbounded_String and then not Is_Hosted then
+                     --  the author's Rust, over the node `n` once its children are done (as C's is): `h.line` is the line the node began
+                     --  on and `h.bind_error(format!(...))` reports a mistake without stopping the walk; the read fails when it ends
+                     if Has_Span (Infos (Owner)) then
+                        Append (Buf, "    h.line = bnf_line(h.text, n._pos);" & LF);
+                     end if;
+                     Append (Buf, "    {" & To_String (Rules (Owner).Action_Code) & "}" & LF);
+                  end if;
                   Append (Buf, "    Ok(())" & LF & "}" & LF & LF);
                end Act_Node;
             begin
+               if not Is_Hosted then
+                  for I in 1 .. N loop
+                     if Rules (I).Action_Code /= Null_Unbounded_String
+                       and then Infos (I).Kind not in Struct | List
+                     then
+                        --  the walk visits nodes; an enum or scalar is a field of one, and its action would never run
+                        raise HBNF_Grammar.Parse_Error with
+                          To_String (Rules (I).Name) & ": an action runs on a node (a sequence, alternation or list rule); this rule is "
+                          & (if Infos (I).Kind = Enum then "an enum" else "a scalar") & ", so put the action on the rule that uses it";
+                     end if;
+                  end loop;
+                  Append (Buf, "// ---- the %actions of the rules, after the read: children first, then the rule's own ----" & LF
+                    & "pub struct Hooks<'a> { pub text: &'a str, pub line: usize, pub errors: Vec<(usize, String)> }" & LF
+                    & "impl<'a> Hooks<'a> {" & LF
+                    & "    pub fn bind_error(&mut self, msg: String) { self.errors.push((self.line, msg)); }" & LF
+                    & "}" & LF
+                    & "fn bnf_line(text: &str, pos: usize) -> usize { text.as_bytes()[..pos.min(text.len())].iter().filter(|&&c| c == b'\n').count() + 1 }" & LF & LF);
+               end if;
                Append (Buf, "// ---- the %actions of the bit rules, after the read ----" & LF);
                for I in 1 .. N loop
                   case Infos (I).Kind is
@@ -2614,6 +2660,8 @@ package body HBNF_Rust is
    end Switch_Methods;
 
    function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
+      Spans_Forced : constant Boolean := Force_Spans (Rules);
+      pragma Unreferenced (Spans_Forced);
       --  Can a rule match the empty text?  Then a scan of length 0 is a match,
       --  not a failure (a lifted `[ x ]` of a token is such a rule).
       Nullable : constant HBNF_Lookahead.Flags :=
@@ -5326,6 +5374,8 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
    end Emit_Parser;
 
    function Emit_Lexer (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
+      Spans_Forced : constant Boolean := Force_Spans (Rules);
+      pragma Unreferenced (Spans_Forced);
       R  : constant HBNF_Grammar.Rule := Rules (1);
       P  : constant HBNF_Grammar.Element_Vectors.Vector := R.Pattern;
       Root_T : constant String :=
@@ -5362,7 +5412,11 @@ Append (Res, "fn scan_" & Rust_Snake (NM)
            (if Is_Hosted and then Hosted_Acts
             then "    BNF_WARNINGS.with(|w| w.borrow_mut().clear());" & LF else ""));
          HBNF_Template.Put (V, "actions",
-           (if Is_Hosted and then Hosted_Acts then
+           (if not Is_Hosted and then Any_Text_Action (Rules) then
+              "    let mut h_ = Hooks { text: p.text, line: 0, errors: Vec::new() };" & LF
+              & "    let _ = bnf_act_root(&out, &mut h_);" & LF
+              & "    if let Some((l_, m_)) = h_.errors.first() { return Err(ParseError { line: *l_, col: 0, msg: m_.clone() }); }" & LF
+            elsif Is_Hosted and then Hosted_Acts then
               "    let mut h_ = Hooks { warnings: Vec::new() };" & LF
               & "    let r_ = bnf_act_root(&out, &mut h_);" & LF
               & "    BNF_WARNINGS.with(|w| *w.borrow_mut() = h_.warnings);" & LF

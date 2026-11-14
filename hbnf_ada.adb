@@ -121,10 +121,15 @@ package body HBNF_Ada is
       Buf : U;
    begin
       for C of S loop
-         Append (Buf, C);
-         if C = '"' then
-            --  Ada doubles the quote delimiter; append it once more.
+         if Character'Pos (C) < 32 or else Character'Pos (C) = 127 then
+            --  Ada has no escape inside a string: a control character (a newline in "\n") is joined on, as a character of that code
+            Append (Buf, """ & Character'Val (" & Ada.Strings.Fixed.Trim (Natural'Image (Character'Pos (C)), Ada.Strings.Both) & ") & """);
+         else
             Append (Buf, C);
+            if C = '"' then
+               --  Ada doubles the quote delimiter; append it once more.
+               Append (Buf, C);
+            end if;
          end if;
       end loop;
       return To_String (Buf);
@@ -886,9 +891,31 @@ package body HBNF_Ada is
       return Back_Edges (Natural (Rules.Length), E);
    end Back_Edges_Ada;
 
+   --  Whether a text rule has an `%action { }`; the records then carry where they began (`Span_Start`), so that the action says the line.
+   function Any_Text_Action (Rules : Rule_Vectors.Vector) return Boolean is
+   begin
+      for R of Rules loop
+         if R.Action_Code /= Null_Unbounded_String then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Any_Text_Action;
+
+   function Force_Spans (Rules : Rule_Vectors.Vector) return Boolean is
+   begin
+      if Any_Text_Action (Rules) and then not Is_Hosted then
+         Spans_On := True;
+      end if;
+      return Spans_On;
+   end Force_Spans;
+
    function Emit (Rules : Rule_Vectors.Vector; Package_Name : String)
      return String
    is
+
+      Spans_Forced : constant Boolean := Force_Spans (Rules);
+      pragma Unreferenced (Spans_Forced);
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -1771,6 +1798,9 @@ package body HBNF_Ada is
      (Rules : HBNF_Grammar.Rule_Vectors.Vector; Package_Name : String)
       return String
    is
+
+      Spans_Forced : constant Boolean := Force_Spans (Rules);
+      pragma Unreferenced (Spans_Forced);
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -4771,7 +4801,7 @@ package body HBNF_Ada is
       --  The %actions of the bit rules a text rule holds, run after the whole
       --  text has been read: Act_<rule> walks a record, children first, and
       --  calls the Walk_<bit rule> of each bit rule it holds.
-      if Is_Hosted and then Hosted_Acts then
+      if (Is_Hosted and then Hosted_Acts) or else (not Is_Hosted and then Any_Text_Action (Rules)) then
          declare
             --  The walk procedure of a bit rule, "" if it has none.
             function Walk_Of (Name : String) return String is
@@ -4864,7 +4894,71 @@ package body HBNF_Ada is
                           & " (" & Prefix & F & ", H);" & LF);
                end if;
             end Act_Member;
+            --  The author's Ada for rule Idx, run over the node `N` (Var, a record) once its children are done: the body of a procedure,
+            --  its declarations, `begin` and statements, as a scanner's is.  `H.Line` is the line the node began on; `Bind_Error (H, "...")`
+            --  reports a mistake without stopping the walk, and the read fails when it ends, with the first.
+            function Action_Of (Idx : Natural; Var, Pad : String) return String is
+               Ty : constant String :=
+                 Ada_Ident (To_String (Rules (Idx).Name)) & (if Var = "E" then "_Entry" else "_Type");
+            begin
+               if Rules (Idx).Action_Code = Null_Unbounded_String or else Is_Hosted then
+                  return "";
+               end if;
+               return Pad & "declare" & LF
+                 & Pad & "   N : " & Ty & " renames " & Var & ";" & LF
+                 & Pad & "   procedure Action_Body is" & LF
+                 & To_String (Rules (Idx).Action_Code) & LF
+                 & Pad & "   end Action_Body;" & LF
+                 & Pad & "begin" & LF
+                 & (if Has_Span (Analyze (Rules, Idx))
+                    then Pad & "   H.Line := Bnf_Line (H.Text.all, N.Span_Start);" & LF else "")
+                 & Pad & "   Action_Body;" & LF
+                 & Pad & "end;" & LF;
+            end Action_Of;
          begin
+            if not Is_Hosted then
+               for I in 1 .. N loop
+                  if Rules (I).Action_Code /= Null_Unbounded_String
+                    and then not (Is_Record (Analyze (Rules, I))
+                                  or else (Analyze (Rules, I).Kind = List
+                                           and then not Analyze (Rules, I).Elem_Members.Is_Empty))
+                  then
+                     --  the walk visits records; a scalar, an enum or a list of plain items is a field of one
+                     raise HBNF_Grammar.Parse_Error with
+                       To_String (Rules (I).Name) & ": an action runs on a node (a sequence, alternation or list rule of records); "
+                       & "this rule is not one, so put the action on the rule that uses it";
+                  end if;
+               end loop;
+               Append (Act_Decls,
+                 "   type Hooks is record" & LF
+                 & "      Text     : access constant String := null;" & LF
+                 & "      Line     : Natural := 0;" & LF
+                 & "      Nerr     : Natural := 0;" & LF
+                 & "      Err_Line : Natural := 0;" & LF
+                 & "      Msg      : String (1 .. 512) := (others => ' ');" & LF
+                 & "      Msg_Len  : Natural := 0;" & LF
+                 & "   end record;" & LF
+                 & "   procedure Bind_Error (H : in out Hooks; Message : String);" & LF
+                 & "   function Bnf_Line (Text : String; Pos : Natural) return Positive;" & LF & LF);
+               Append (Act_Body,
+                 "   procedure Bind_Error (H : in out Hooks; Message : String) is" & LF
+                 & "   begin" & LF
+                 & "      if H.Nerr = 0 then" & LF
+                 & "         H.Msg_Len := Natural'Min (Message'Length, H.Msg'Length);" & LF
+                 & "         H.Msg (1 .. H.Msg_Len) := Message (Message'First .. Message'First + H.Msg_Len - 1);" & LF
+                 & "         H.Err_Line := H.Line;" & LF
+                 & "      end if;" & LF
+                 & "      H.Nerr := H.Nerr + 1;" & LF
+                 & "   end Bind_Error;" & LF & LF
+                 & "   function Bnf_Line (Text : String; Pos : Natural) return Positive is" & LF
+                 & "      L : Positive := 1;" & LF
+                 & "   begin" & LF
+                 & "      for I in Text'First .. Natural'Min (Pos, Text'Last) loop" & LF
+                 & "         if Text (I) = ASCII.LF then L := L + 1; end if;" & LF
+                 & "      end loop;" & LF
+                 & "      return L;" & LF
+                 & "   end Bnf_Line;" & LF & LF);
+            end if;
             for I in 1 .. N loop
                declare
                   Info : constant Rule_Info := Analyze (Rules, I);
@@ -4876,6 +4970,7 @@ package body HBNF_Ada is
                         for M of Info.Members loop
                            Act_Member (I, M, "V.", Stmts);
                         end loop;
+                        Append (Stmts, Action_Of (I, "V", "   "));
                      elsif Info.Elem_Members.Is_Empty
                        and then Info.Elem_Name /= Null_Unbounded_String
                      then
@@ -4913,6 +5008,7 @@ package body HBNF_Ada is
                                 (I, (Name => M.Name, Is_List => False),
                                  "E.", Inner, Held => True);
                            end loop;
+                           Append (Inner, Action_Of (I, "E", "      "));
                            if To_String (Inner) /= "" then
                               Append (Stmts, "   for E of V loop" & LF
                                       & To_String (Inner) & "   end loop;" & LF);
@@ -7001,7 +7097,19 @@ package body HBNF_Ada is
                            & " loop Frames.Append (0); end loop;"
                       else "") & LF else ""));
          HBNF_Template.Put (V, "actions",
-           (if Is_Hosted and then Hosted_Acts
+           (if not Is_Hosted and then Any_Text_Action (Rules)
+              and then (Is_Record (Analyze (Rules, 1)) or else Analyze (Rules, 1).Kind = List)
+            then
+              "      declare" & LF
+              & "         H : Hooks;" & LF
+              & "      begin" & LF
+              & "         H.Text := T'Unchecked_Access;" & LF
+              & "         Act_" & Ada_Ident (To_String (Rules (1).Name)) & " (R, H);" & LF
+              & "         if H.Nerr > 0 then" & LF
+              & "            raise Parse_Error with Natural'Image (H.Err_Line) (2 .. Natural'Image (H.Err_Line)'Last) & "":0: "" & H.Msg (1 .. H.Msg_Len);" & LF
+              & "         end if;" & LF
+              & "      end;" & LF
+            elsif Is_Hosted and then Hosted_Acts
               and then (Is_Record (Analyze (Rules, 1))
                         or else Analyze (Rules, 1).Kind = List)
             then

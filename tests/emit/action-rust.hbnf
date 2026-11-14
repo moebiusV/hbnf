@@ -1,0 +1,12 @@
+; %action { } for the Rust backend: the code is Rust, over the node `n` once its children are done (children first, as C's walk is);
+; `h.line` is the line the node began on and `h.bind_error(format!(...))` reports a mistake without stopping the walk: the read fails
+; when it ends, with the first one
+language Rust
+prefix none
+whitespace none
+{
+pub static mut SEEN: u32 = 0;
+}
+config = *( entry )
+entry  = "set" " " word ";\n" %action{ unsafe { SEEN += 1; } if n.word.len() > 3 { h.bind_error(format!("`{}` is too long", n.word)); } }
+word   = 1*0x61..0x7a

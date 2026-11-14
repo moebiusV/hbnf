@@ -962,7 +962,28 @@ package body HBNF_Zig is
       return N;
    end Alt_Labels_Count;
 
+   --  Whether a text rule has an `%action { }`; the nodes then carry where they began (`_pos`), so that the action says the line.
+   function Any_Text_Action (Rules : Rule_Vectors.Vector) return Boolean is
+   begin
+      for R of Rules loop
+         if R.Action_Code /= Null_Unbounded_String then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Any_Text_Action;
+
+   function Force_Spans (Rules : Rule_Vectors.Vector) return Boolean is
+   begin
+      if Any_Text_Action (Rules) and then not Is_Hosted then
+         Spans_On := True;
+      end if;
+      return Spans_On;
+   end Force_Spans;
+
    function Emit (Rules : Rule_Vectors.Vector) return String is
+      Spans_Forced : constant Boolean := Force_Spans (Rules);
+      pragma Unreferenced (Spans_Forced);
 
       N : constant Natural := Natural (Rules.Length);
 
@@ -1546,7 +1567,7 @@ package body HBNF_Zig is
          --  The %actions of the bit rules a text rule holds, run after the whole
          --  text has been read: bnf_act_<rule> walks a node, children first, and
          --  calls the walk_<bit rule> of each bit rule it holds.
-         if Is_Hosted and then Hosted_Acts then
+         if (Is_Hosted and then Hosted_Acts) or else (not Is_Hosted and then Any_Text_Action (Rules)) then
             declare
                function Walked (Name : String) return Boolean is
                  (Find (Rules, Name) = 0
@@ -1619,9 +1640,50 @@ package body HBNF_Zig is
                                Back_Target (Backs, Owner, To_String (M.Name)),
                                "n." & Zig_Field (To_String (M.Name)), Buf, "    ");
                   end loop;
+                  if Rules (Owner).Action_Code /= Null_Unbounded_String and then not Is_Hosted then
+                     --  the author's Zig, over the node `n` once its children are done (as C's is): `h.line` is the line the node began
+                     --  on and `h.bind_error("fmt", .{ args })` reports a mistake without stopping the walk; the read fails when it ends
+                     if Has_Span (Infos (Owner)) then
+                        Append (Buf, "    h.line = bnf_line(h.text, n._pos);" & LF);
+                     end if;
+                     Append (Buf, "    {" & To_String (Rules (Owner).Action_Code) & "}" & LF);
+                  end if;
                   Append (Buf, "}" & LF & LF);
                end Act_Node;
             begin
+               if not Is_Hosted then
+                  for I in 1 .. N loop
+                     if Rules (I).Action_Code /= Null_Unbounded_String
+                       and then Infos (I).Kind not in Struct | List
+                     then
+                        raise HBNF_Grammar.Parse_Error with
+                          To_String (Rules (I).Name) & ": an action runs on a node (a sequence, alternation or list rule); this rule is "
+                          & (if Infos (I).Kind = Enum then "an enum" else "a scalar") & ", so put the action on the rule that uses it";
+                     end if;
+                  end loop;
+                  Append (Buf, "// ---- the %actions of the rules, after the read: children first, then the rule's own ----" & LF
+                    & "const Hooks = struct {" & LF
+                    & "    text: []const u8," & LF
+                    & "    line: usize = 0," & LF
+                    & "    nerr: usize = 0," & LF
+                    & "    err_line: usize = 0," & LF
+                    & "    msg: [512]u8 = undefined," & LF
+                    & "    msg_len: usize = 0," & LF
+                    & "    pub fn bind_error(h: *Hooks, comptime fmt: []const u8, args: anytype) void {" & LF
+                    & "        if (h.nerr == 0) {" & LF
+                    & "            const s = std.fmt.bufPrint(&h.msg, fmt, args) catch h.msg[0..0];" & LF
+                    & "            h.msg_len = s.len;" & LF
+                    & "            h.err_line = h.line;" & LF
+                    & "        }" & LF
+                    & "        h.nerr += 1;" & LF
+                    & "    }" & LF
+                    & "};" & LF
+                    & "fn bnf_line(text: []const u8, pos: usize) usize {" & LF
+                    & "    var n: usize = 1;" & LF
+                    & "    for (text[0..@min(pos, text.len)]) |c| { if (c == 10) n += 1; }" & LF
+                    & "    return n;" & LF
+                    & "}" & LF & LF);
+               end if;
                Append (Buf, "// ---- the %actions of the bit rules, after the read ----" & LF);
                for I in 1 .. N loop
                   case Infos (I).Kind is
@@ -2808,6 +2870,8 @@ package body HBNF_Zig is
    end Switch_Names;
 
    function Emit_Parser (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
+      Spans_Forced : constant Boolean := Force_Spans (Rules);
+      pragma Unreferenced (Spans_Forced);
       --  Can a rule match the empty text?  Then a scan of length 0 is a match,
       --  not a failure (a lifted `[ x ]` of a token is such a rule).
       Nullable : constant HBNF_Lookahead.Flags :=
@@ -6081,6 +6145,8 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
    end Emit_Parser;
 
    function Emit_Lexer (Rules : HBNF_Grammar.Rule_Vectors.Vector) return String is
+      Spans_Forced : constant Boolean := Force_Spans (Rules);
+      pragma Unreferenced (Spans_Forced);
       R  : constant HBNF_Grammar.Rule := Rules (1);
       P  : constant HBNF_Grammar.Element_Vectors.Vector := R.Pattern;
       Root_T : constant String :=
@@ -6111,7 +6177,18 @@ Append (Res, "fn scan_" & Zig_Snake (NM)
               then "    p.fs.appendNTimes(alloc, 0, " & Img (HBNF_Grammar.Frame_Size (To_String (Rules (1).Name)))
                    & ") catch return p.err_out(err, err_line, err_col);" & LF else ""));
          HBNF_Template.Put (V, "actions",
-           (if Is_Hosted and then Hosted_Acts then
+           (if not Is_Hosted and then Any_Text_Action (Rules) then
+              "    var h_ = Hooks{ .text = p.text };" & LF
+              & "    bnf_act_root(&out, &h_) catch {};" & LF
+              & "    if (h_.nerr > 0) {" & LF
+              & "        const n = @min(h_.msg_len, err.len - 1);" & LF
+              & "        @memcpy(err[0..n], h_.msg[0..n]);" & LF
+              & "        err[n] = 0;" & LF
+              & "        err_line.* = h_.err_line;" & LF
+              & "        err_col.* = 0;" & LF
+              & "        return error.Invalid;" & LF
+              & "    }" & LF
+            elsif Is_Hosted and then Hosted_Acts then
               "    var h_ = Hooks{ .alloc = alloc };" & LF
               & "    bnf_act_root(&out, &h_) catch {" & LF
               & "        const n = @min(h_.msg.len, err.len - 1);" & LF
