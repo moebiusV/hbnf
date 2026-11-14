@@ -176,6 +176,13 @@ parameterised rules.
    one per rule, and a block may name a template as shorthand for the code
    that renders it.  Those are changes to the family, not to one member,
    which is the test of whether a member belongs in it.
+
+   *Superseded in part 2026-11-14 (`LANGUAGES.md`, R708 to R712): `%emit{ }`
+   is built (all four backends) and stays, for the smaller things it is for.
+   It is not the main mechanism for turning a backend into a grammar; that
+   is rewrites (`->`, `=>`, `=>>`) over the IR, through a layout grammar and
+   then a language grammar.  "What would let a backend be a schema" above and
+   in step 13b is the earlier idea, kept as the record.*
 9. **`<prose-val>`** reads as a rule nobody has written yet: generation
    stops with `file:line:col`, the source line with a caret under the
    `<…>`, and "not written yet:" and the text in the angle brackets.  The
@@ -560,6 +567,10 @@ A grammar is compiler-compiler ready when:
     `HBNF_Template` (`hbnf_template.adb`, a recursive Scalar/List/Map context), so a compiler can
     inspect rules, locations, semantic values and wire values before
     emission.  *The renderer is written and renders every template (step 3b).*
+    *Forward pointer, 2026-11-14: the Mustache templates are to be replaced
+    by hbnf rewrite grammars in `languages/` over an IR of about forty
+    operations (R608, R708 to R712, `LANGUAGES.md`); decided, details tbd,
+    not built.  The renderer is the current state, not the end state.*
 11. **Round-trip and byte-identity gates are mandatory.**  Text grammars keep
     their source/value distinctions; wire grammars have byte fixtures; the
     backends agree with one another on acceptance and values.
@@ -674,6 +685,10 @@ Six things decide that order, and each one is a dependency rather than a
 preference:
 
 - **3b came first because it makes every later step cheaper.**  *Done.*
+  *(Forward pointer, 2026-11-14: the templates this step moved the loops into
+  are themselves to be replaced by `languages/` rewrite grammars, R608 and
+  R708 to R712, `LANGUAGES.md`; decided, details tbd, not built.  What
+  follows is the reasoning of the time.)*
   The switchover to Mustache templates (first mustache-ada, now `HBNF_Template`) moved the per-element loops out of the four
   emitters and into the templates.  Every step after it that touches the
   type emitter or the parse emitter — 9b above all, which adds an
@@ -751,7 +766,10 @@ should claim that before 10.
    from disk at startup, nothing baked in.
 
    3b. **Done 2026-10-02/03: Mustache renders the templates and
-       `Templates` is gone.**  *Replaced 2026-10-31: the renderer is now
+       `Templates` is gone.**  *Forward pointer, 2026-11-14: Mustache is the
+       current renderer; the templates are to be replaced by `languages/`
+       rewrite grammars (R608, R708 to R712, `LANGUAGES.md`), decided,
+       details tbd, not built.*  *Replaced 2026-10-31: the renderer is now
        `HBNF_Template` (`hbnf_template.ads`, `hbnf_template.adb`), hbnf's own
        Mustache package, and the external mustache-ada library is no longer a
        dependency.*  A template is read by the parser hbnf makes of
@@ -2310,10 +2328,26 @@ lookahead or a context test not at all.
    reads back to the grammar it was printed from.
 
    13b. **Closing META II's loop: the classification in the notation.**
-   *Open, and open to argument.*  Not scheduled; recorded because it is
-   the one thing between 13a and a self-hosting hbnf, and because the
-   shape it should take is a design question worth settling before anyone
-   writes code.
+   **Superseded in part 2026-11-14 by `LANGUAGES.md` and R608, R703, R704,
+   R708 to R712.**  The author decided, in his own words, that the backends
+   become hbnf grammars: the front end makes an IR of about forty operations,
+   layout grammars (`layouts/`, rewrite grammars) transform it into its
+   output form, and one emitter back end picks the language grammar
+   (`languages/`, one rewrite grammar per target language) that rewrites the
+   layout-shaped IR into source text with the rewrite rules `=>`, `=>>` and
+   `->`, replacing the Mustache templates and the per-language Ada emitters;
+   the grammars may be compiled to `.o` files and linked in, or run
+   interpretively.  Decided, details tbd, not built.  `%emit{ }` is not
+   removed or discouraged: it stays for the smaller things it is for.  It
+   was only never the main mechanism envisioned here; the text below, which
+   makes `%emit{ }` naming templates the way a backend becomes a schema, is
+   the earlier idea of 2026-10-03 and is kept as the record, not as the
+   plan.  Its questions 1 to 4 are about that earlier idea.
+
+   *Earlier label, kept:* "Open, and open to argument."  Not scheduled;
+   recorded because it is the one thing between 13a and a self-hosting
+   hbnf, and because the shape it should take is a design question worth
+   settling before anyone writes code.
 
    **What stands in the way.**  13a makes hbnf self-*describing*, which is
    weaker than self-*compiling* — `hbnf.hbnf` through hbnf yields a parser
@@ -2323,7 +2357,18 @@ lookahead or a context test not at all.
    rule shape gets.  Those are Ada, and until they are expressible in the
    notation the loop does not close.
 
-   3b moved this much closer than it looks.  The emitters are no longer
+   3b moved this much closer than it looks.  *(Corrected 2026-11-14, as
+   measured in `LANGUAGES.md` and the sources: the paragraph as first
+   written said the emitters were no longer Ada that writes C but 65
+   templates with the Ada reduced to choosing a template.  There are 71
+   templates in `templates/` (45 of them C's), and they carry the fixed
+   runtime blocks, the type declarations and the entry point; the logic of
+   every rule's parser, sequences, choices, repetition, contexts, rewrites,
+   emits, is still Ada string-building in each of the four emitters (about
+   2,240 `Append` calls in `hbnf_c.adb`, 1,310 in `hbnf_ada.adb`, 956 in
+   `hbnf_zig.adb`, 763 in `hbnf_rust.adb`).  The output shape is partly
+   data; the choosing and most of the writing are not.)*  The text as first
+   written:  The emitters are no longer
    Ada that writes C; they are 65 `{{ }}` templates driven by the tree,
    with the Ada reduced to choosing which template a rule shape gets.  The
    output shape is already data.  Only the choosing is not.
@@ -2335,7 +2380,9 @@ lookahead or a context test not at all.
    notation grew it.
 
    **The shape is decided: `%emit{ }`, the family's third member** (agreed
-   2026-10-03, decision 8).  The family had two members and a gap at the
+   2026-10-03, decision 8).  *(2026-11-14: `%emit{ }` as the family's third
+   member is built and stands.  What is superseded is the use of it to make a
+   backend a schema; see the note at the head of this step.)*  The family had two members and a gap at the
    generative level; that is the gap.  What remains open is not *whether*
    but *how*, and the open questions are listed below.
 
@@ -2372,9 +2419,15 @@ lookahead or a context test not at all.
    is grammars — so it needs `hbnf.hbnf`'s own tree types to exist, which
    means 9b first.  `hbnf_schema.hbnf`'s mutually recursive `entry`/`block`
    is already the case in point: the backends refuse it today, and that
-   refusal is why the interpreter still exists (9c).
+   refusal is why the interpreter still exists (9c).  *(As written on
+   2026-10-04.  Step 9c is done: the interpreter was retired 2026-10-06, see
+   9c above, and `hbnf_schema.hbnf`, which is the obconf grammar and not a
+   grammar of the notation, generates in every backend.)*
 
-   **What is still open, now that the member is settled.**  Four questions,
+   **What was still open, now that the member is settled** *(about the
+   `%emit`-names-templates idea, superseded 2026-11-14; the one-schema-per-
+   language question is answered by R608 and R710: one directory per
+   language under `languages/`)*.  Four questions,
    and the first is the one that decides whether this feels native:
 
    1. **How does a rule match a rule *shape*?**  A schema whose input is
@@ -2398,7 +2451,8 @@ lookahead or a context test not at all.
       one-pass translator, so the two members may legitimately differ on
       *when*, while sharing *where*.
 
-   **And a standing alternative.**  Leaving the classifier in Ada and
+   **And a standing alternative** *(2026-11-14: no longer standing; the
+   author decided the backends become grammars, R608, R710)*.  Leaving the classifier in Ada and
    calling 13a the end is defensible — self-describing is a real property,
    and McCarthy's `eval` was useful without being a compiler.  Reynolds'
    warning in the HISTORY.md passage applies here more than anywhere: a
@@ -2642,6 +2696,8 @@ cycles.
     field).  The three tape grammars (`json-tape.hbnf`, `toml-tape.hbnf`, `yaml-tape.hbnf`) were
     written by hand, and the hand-written `%emit` blocks in them are what a layout would write.
 
+    *(Note, 2026-11-14.  What a layout is today: `ast` and `tape` are Ada, `tape` through `HBNF_Grammar.Tape_Layout`, which inserts `%emit` blocks as described here; `tailq` and `rb` are directories under `layouts/` whose `layout.hbnf` is C macro text (`layout_ops`), emitted by the C backend only.  The direction the author decided (R709, `LANGUAGES.md`) is that a layout is an hbnf rewrite grammar that transforms the IR into its output form, ahead of the language grammar; decided, details tbd, not built.  The tape layout described below is the working Ada version.)*
+
     *How.*  A layout is a rewrite of the rules before generation, as `Lift` is: it inserts the
     `%emit` blocks of step 15, with the types and the `rollback` the layout needs, and the generator
     that exists does the rest.  A tape layout makes an opener and closer for each rule that holds
@@ -2656,7 +2712,7 @@ cycles.
     around a flow pair), a computed value.  The hand-written tape grammars stay as the references the
     derived tape is measured against, on the three formats, before it is made the default for C.
 
-    *What the tape layout does, built.*  `layout tape` in a grammar, or `--layout=tape`, rewrites the
+    *What the tape layout does, built (in Ada today, not yet as a rewrite grammar, R709).*  `layout tape` in a grammar, or `--layout=tape`, rewrites the
     rules in `HBNF_Grammar.Tape_Layout`, at the start of `Lift` (so the language checks have seen the
     grammar as written).  Every phrase rule becomes a function that yields a value and builds no struct.
     A rule that holds fields is opened where it begins and closed where it ends, with its rule as the
@@ -2757,7 +2813,7 @@ cycles.
     recovery with restarts (step 8).  The C preprocessor as a grammar; C17 and C23 grammars; the typedef-context
     port for the Ada side (step 16 depends on it).
 
-20. **Grammars for COBOL, ALGOL 68 and C++.**  *Added 2026-10-31 (the user); COBOL begun 2026-10-31 (`corpus/cobol/`: free format, checked against `cobc` on a few programs of its own and on the programs of GnuCOBOL's test suite, `tests/cobol-scan.sh`), ALGOL 68 and C++ not started.  Targets set 2026-11-11 (the user): a complete C++ front end, the preprocessor included, one grammar for each C++ version, oldest first, and ALGOL 68; and a full COBOL front end, old and modern dialects.  About 5,000 lines of grammar and epilogue for each grammar, a soft limit that is per grammar and not a total.*  What makes COBOL hard is not its syntax but what surrounds it: `COPY` chains (a preprocessor's work, so with the C preprocessor item), fixed-format columns (a `ws` scanner can skip the sequence area and read the indicator column, since it can look back to the line start; the continuation of a literal is the hard part), decades of dialects, and a type system in the `PICTURE` and `USAGE` that a parser must keep as written.  One grammar
+20. **Grammars for COBOL, ALGOL 68 and C++.**  *Added 2026-10-31 (the user); COBOL begun 2026-10-31 (`corpus/cobol/`: free format, checked against `cobc` on a few programs of its own and on the programs of GnuCOBOL's test suite, `tests/cobol-scan.sh`), ALGOL 68 and C++ not started.  Targets set 2026-11-11 (the user): a complete C++ front end, the preprocessor included, one grammar for each C++ version, and ALGOL 68; and a full COBOL front end, old and modern dialects.  About 5,000 lines of grammar and epilogue for each grammar, a soft limit that is per grammar and not a total.*  What makes COBOL hard is not its syntax but what surrounds it: `COPY` chains (a preprocessor's work, so with the C preprocessor item), fixed-format columns (a `ws` scanner can skip the sequence area and read the indicator column, since it can look back to the line start; the continuation of a literal is the hard part), decades of dialects, and a type system in the `PICTURE` and `USAGE` that a parser must keep as written.  One grammar
     for each, written to read as much like the pure BNF of the language's own standard as the notation
     allows: compact and idiomatic, a rule for a production, the production's name, and no lexer tricks
     beside it.  This is the test of the claim in the README that a grammar can carry a language that a
@@ -2770,11 +2826,11 @@ cycles.
     gets today, with no stack, no table and no cost per token; the machinery is generated only for a
     grammar that asks for it.  Still to settle, with the user before any of it is built (a syntax change is
     shown first): how a grammar asks for it, what a parse that is ambiguous returns (one tree by a stated
-    rule, or all of them), and what the other backends do (refuse, as they do for `%emit`, or implement).
-    The order (the user's plan, 2026-11-11): COBOL to a full front end first (it is furthest on, and fixed format and `COPY`/`REPLACE` need the source stack below), the C preprocessor on the C family next (the same source stack), then ALGOL 68, then C++ one standard at a time, oldest first.  C++ leans on the C family (`corpus/c/`) and the typedef context
+    rule, or all of them), and what the other backends do (refuse, or implement; they no longer refuse `%emit`, which all four backends generate since R700).
+    The order (the user's plan, 2026-11-11): COBOL to a full front end first (it is furthest on, and fixed format and `COPY`/`REPLACE` need the source stack below), the C preprocessor on the C family next (the same source stack), then ALGOL 68, then C++ one standard at a time.  *(Note, 2026-11-14: "oldest first", which stood here, is not the author's wording.  He said that each C++ version gets its own front end because the older ones are easier to parse (R599), and that the grammars for C++23 and the preprocessor come as rewrites (R595); the order of the whole list is the implementer's, details tbd, to be confirmed with him.  The AI conversation of 2026-11-11 listed a different order, core engine, COBOL, fixed format and `COPY`/`REPLACE`, C++23 with the preprocessor, ALGOL 68, older C++; that list is not his decision either.)*  C++ leans on the C family (`corpus/c/`) and the typedef context
     of step 16.  The size is reported with the notation's counts (`bench/notation.sh`: tokens, rules, concepts), since a line count alone does not say how much a reader has to hold.
 
-    *A preprocessor in the same grammar (the user's question, 2026-11-02; an idea, not decided).*  `COPY`, `REPLACE`, `#include` and `#define` can be applied as the parser goes, instead of in a pass before it: a source stack. Reaching `COPY name.` or a macro call pushes the other text (a copybook, a macro's expansion) as the current input, the same rules go on reading it, and its end pops back. A `REPLACE` or a `#define` is a fact (the pattern and its replacement, live until `REPLACE OFF` or `#undef`) that the scanner consults at each token; `#if` is a live/skipped region. Facts and the stack are put back when a guess is given back, as the typedef sets are. It handles what a separate pass handles badly (a macro that expands to half a declaration), and a program with no preprocessing pays nothing. Every position is then a chain of origins, `(source, offset)` with the place that pushed it, so an error or a tree node can be reported as gcc does (`in expansion of macro M, at a.c:3`, `copied from X.cpy by prog.cob:12`). Open: how the memo of a speculative parse keys positions that come from different sources, and where `REPLACE`'s pseudo-text matching (a token sequence, not a name) sits in the scanner. Sketched with the island and switch of `CONTEXTS.md`.
+    *A preprocessor in the same grammar (the user's question, 2026-11-02; an idea then).*  *Note, 2026-11-14: that the preprocessor is rewrites in the grammar is decided (R595) and built for C as `corpus/c/cpp.hbnf` with the rewrite rules `=>` and `=>>` (R692 to R707), and COBOL `COPY` and `REPLACE` the same way (`corpus/cobol/cobol-copy.hbnf`), in the C backend; the source stack sketched below is the first idea of how, kept as the record.*  `COPY`, `REPLACE`, `#include` and `#define` can be applied as the parser goes, instead of in a pass before it: a source stack. Reaching `COPY name.` or a macro call pushes the other text (a copybook, a macro's expansion) as the current input, the same rules go on reading it, and its end pops back. A `REPLACE` or a `#define` is a fact (the pattern and its replacement, live until `REPLACE OFF` or `#undef`) that the scanner consults at each token; `#if` is a live/skipped region. Facts and the stack are put back when a guess is given back, as the typedef sets are. It handles what a separate pass handles badly (a macro that expands to half a declaration), and a program with no preprocessing pays nothing. Every position is then a chain of origins, `(source, offset)` with the place that pushed it, so an error or a tree node can be reported as gcc does (`in expansion of macro M, at a.c:3`, `copied from X.cpy by prog.cob:12`). Open: how the memo of a speculative parse keys positions that come from different sources, and where `REPLACE`'s pseudo-text matching (a token sequence, not a name) sits in the scanner. Sketched with the island and switch of `CONTEXTS.md`.
 
     *Generator bugs found while working on the COBOL grammar (2026-11-02), and fixed.*  (1) A lookahead (`!` or `&`) inside the character-level
     `ws` rule (`ws = ... | "$" !picture-start *~( CR | LF )`) stopped generation with `raised CONSTRAINT_ERROR : hbnf_compilable.adb:481 discriminant check
@@ -2791,7 +2847,7 @@ cycles.
 
     *Contexts (the user, 2026-11-02): embedded languages in COBOL (SQL, CICS), the PICTURE clause as a language of its own, and the data division's declarations all depend on a context; `CONTEXTS.md` names the three relations (in, has, is), what else might count, and the options for writing each, for review.*
 
-    *A design idea, not decided (the user, 2026-10-31).*  A grammar that reads one language can also say how a
+    *A design idea (the user, 2026-10-31); developed 2026-11-14 into the layout and language grammars (R608, R708 to R712, `LANGUAGES.md`): a rule's output form is written as a rewrite grammar, decided, details tbd.*  A grammar that reads one language can also say how a
     rule is written out in another, so that it translates: ALGOL's `begin` statements `end` comes out as C's
     `{` statements `}`, and a keyword comes out in capitals.  A rule is then one of three things: a
     **transformation rule** (it is written out in a different form from the one it was read in), a rule that
