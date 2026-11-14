@@ -9,7 +9,12 @@ just a matter of dropping another language into the languages/ dir" (R703); "the
 languages besides the current 4" (R703).  What is decided is the shape below; what is marked **details tbd** or **the implementer's
 proposal** is not a decision.
 
-## The pipeline: three stages (R708)
+## The pipeline: three stages and the build step (R708, R714, R715)
+
+All the stages are written as **hbnf grammars with epilogues, linked in as `.o` files** (R714): "so it is a pipeline, hbnf grammars plus
+epilogues and linked in .o files will a) parse the grammars and emit optimized ir b) layout grammars take the ir and transform it into
+the layout form c) takes the output of layout, possibly a different ir format, possibly not, and transforms it from the 40 operations
+into actual code".  Stage (a) as hbnf grammars is a question for the author (R717): the reader is Ada today.
 
 1. **Front end.**  The reader, the analyses (compilability, lookahead, contexts, facts) and the optimisations turn the grammar into
    the IR: about forty typed operations (hbnf-ir, hbnf-ops; the list is *details tbd*, a first count is under "The operations" below).
@@ -20,6 +25,15 @@ proposal** is not a decision.
    grammar rewrites the layout-shaped IR into source text.  This replaces the Mustache templates and the four per-language Ada
    emitters.  "The templates themselves do the rewrites; the templates will be written externally and then used like an interpretive
    language."
+
+4. **Builder** (R715; R610 to R618, R634).  The build system chosen by the `build` directive or by `project.conf` (standalone, make,
+   cmake, cargo, autoconf, ninja and the rest, each a grammar in `builders/`) is applied after the language stage.  Whether a builder
+   reads the same IR as the layout and language stages is a question for the author (R716: "possibly it gets access to the same ir");
+   hbnf choosing which code goes in which files (R610) means a builder needs at least the list of emitted files.  Nothing of this is
+   built (`builders/`, `project.conf`, the `build` directive do not exist).
+
+Whether the output of the layout is a different IR format or the same one is *details tbd* (R714: "possibly a different ir format,
+possibly not").
 
 The mechanism of stages 2 and 3 is the rewrite rules `->` (the tree rewrite), `=>` (replace the matched text and go on reading at the
 start of the new text) and `=>>` (replace it and read everything again from the start): the rules that already do COBOL COPY and

@@ -22,7 +22,15 @@ Status vocabulary (the author's rule): a decision stays a decision when its deta
 5. **Compiled or interpreted:** the layout and language grammars may be compiled to `.o` files and linked in; they need not run
    interpreted.  R712, R703, R704.
 
-Details tbd: how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),
+6. **All the stages are hbnf grammars with epilogues, linked in as `.o` files**: (a) parse the grammars and emit the optimised IR,
+   (b) the layout grammars transform it into the layout form, (c) the language grammar takes the layout's output, "possibly a different
+   ir format, possibly not", and transforms it from the 40 operations into code.  R714.
+7. **The build system chosen is applied after the language stage.**  The build system was already decided (R610 to R618, R634:
+   `build` directive and `project.conf`; standalone, make, cmake, cargo, autoconf, ninja and the rest, a grammar each in `builders/`),
+   but no document connected it to the pipeline.  R715.  Whether a builder reads the same IR is the author's "possibly" (R716).
+8. **"Jets" is fine, "it is a term of art"** (R713): the removal of the word in R352 is withdrawn.
+
+Details tbd: whether the layout's output is a different IR format or the same one, how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),
 the loading interface.  The callback interface in `LANGUAGES.md` (`hb_lang_*`, `dlopen`) is the implementer's proposal, not a decision.
 
 ### Language targets and notation (2026-11-11; R594 to R602)
@@ -45,6 +53,7 @@ the author has not restated it; details tbd).
 
 | Point | What the documents said at 01e9b2f | What the code does |
 |---|---|---|
+| Build step | Documented in R610 to R618, R634, `TODO.md:101` and `decisions-and-status.md` (Build files), apart from the pipeline; `LANGUAGES.md` named `builders/` once. | Not built: no `builders/`, no `project.conf`, no `build` or `hbnfversion` directive in `hbnf_grammar.adb`. |
 | Three-stage pipeline | Stated nowhere as a pipeline.  `LANGUAGES.md` had stages 1 and 3, no layout stage, "Draft … Nothing here is built" over a section headed "Decided (R703)". | Not built.  `hbnf.adb:657-703` picks one of nine hand-written emitters by a string if-chain. |
 | IR of about forty operations | A prose list, `LANGUAGES.md:50-54`.  R3 and `decisions-and-status.md:1769` said "the ast is the ir … no separate IR stage" (DONE). | No such type.  Nearest: `Block_Op`, 27 source-construct members, `hbnf_grammar.ads:178-205`. |
 | Layouts are rewrite grammars over the IR | Not said.  `RFCPLAN.md:2645` "a layout … inserts the `%emit` blocks"; `ABNF.md:342` raw C with `@holes@`. | `ast` and `tape` are Ada (`Tape_Layout`, `hbnf_grammar.adb:15327-15772`).  `tailq`, `rb` are C macro tables read by the C backend only; neither file has a rewrite rule. |
@@ -59,7 +68,7 @@ the author has not restated it; details tbd).
 | Priority order | Repository: COBOL, preprocessor, ALGOL 68, C++ "oldest first".  "The plan of 2026-11-11, Phases 1–7" cited in five places; it is not in the repository. | Engine work, COBOL fixed format and COPY, then the preprocessor. |
 | Four backends as equals | Not stated as a requirement; many stale "C only" statements. | See the rewrite row for what the other three still refuse. |
 
-Also found: ten decision rows in the register ended "open"; "jets" was removed by R352 and used again in R701 and R702; the word
+Also found: ten decision rows in the register ended "open"; the word "jets" was removed by R352 and used again in R701 and R702 (settled by R713: it stays); the word
 "layout" has three meanings (the output data structure, the shape of generated code, the pretty-printer hook type);
 `hbnf_schema.hbnf` is the obconf configuration grammar, not a schema of the notation; the documents carried local-machine inventories.
 
@@ -67,7 +76,8 @@ Also found: ten decision rows in the register ended "open"; "jets" was removed b
 
 Each group is one commit.
 
-- **`LANGUAGES.md`**: the one authoritative statement.  Status "Decided; not built; details tbd"; the three stages in order; one
+- **`LANGUAGES.md`**: the one authoritative statement; later the build step (R715) and the "all stages are hbnf grammars" statement
+  (R714) were added.  Status "Decided; not built; details tbd"; the three stages in order; one
   emitter back end; `%emit` stays for smaller things; the `hb_lang_*` interface, `dlopen` and the static-versus-dynamic note marked as
   the implementer's proposal; measurements refreshed.
 - **`decision-register.md`**: R708 to R712 appended with the author's words; forward pointers on R3, R153, R512, R623, R624; the ten
@@ -105,12 +115,17 @@ Code, not comments (not changed here):
 
 Questions only the author can answer, each decided neither way here:
 
-1. "Jets": R352 removed the word, R701 and R702 use it.  Which stands?
-2. Do the generated tables in `cpp-gnu.hbnf` and the native C inside `cpp.hbnf` count toward the 5,000-line soft limit per grammar?
-3. The order of work after the preprocessor (the repository says COBOL, preprocessor, ALGOL 68, C++; the 2026-11-11 handoff text listed
+1. Do the generated tables in `cpp-gnu.hbnf` and the native C inside `cpp.hbnf` count toward the 5,000-line soft limit per grammar?
+2. The order of work after the preprocessor (the repository says COBOL, preprocessor, ALGOL 68, C++; the 2026-11-11 handoff text listed
    six steps; the "plan of 2026-11-11, Phases 1–7" cited in five places is not in the repository).
-4. Do layouts nest under `languages/` (R614, "Maybe")?
-5. Should `ast` and `tape` become files under `layouts/` like `tailq` and `rb`, as the pipeline implies?
+3. Do layouts nest under `languages/` (R614, "Maybe")?
+4. Should `ast` and `tape` become files under `layouts/` like `tailq` and `rb`, as the pipeline implies?
+5. Does a builder read the same IR as the layout and language stages (R716, "possibly")?
+6. Is stage (a), the front end, the Ada reader replaced by hbnf grammars and epilogues (self-hosting), or does the Ada reader stay as
+   the bootstrap beside them (R717)?
+7. Is the output of the layout stage a different IR format, or the same one (R714, "possibly a different ir format, possibly not")?
+
+Answered since the first version of this file: "jets" (R713, it stays as a term of art).
 
 Details tbd within decided matter: the operation list and the typing of each operation; how a layout grammar names the shape it
 produces; how a language grammar receives it; building and linking the `.o` files; how the one emitter back end finds the grammar.
