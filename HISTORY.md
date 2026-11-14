@@ -683,6 +683,8 @@ renderer is the project's own: `HBNF_Template` reads a template with the parser 
 `grammars/template.hbnf`, so the generator now depends on a parser it generated, and the external
 mustache-ada library it used from 3 October is gone.
 
+*Forward note, 2026-11-14 (the paragraph above stays as the history of 31 October): the Mustache templates are not the end state.  It is decided that the templates and the per-language Ada emitters are replaced by layout and language rewrite grammars run by one emitter back end (`LANGUAGES.md`, R708 to R712); not built, details tbd.*
+
 **Where it could do better.** It has no incremental parse; an edit means parsing
 the file again. It has no error recovery; bad input fails instead of producing a
 broken tree. An alternation that mixes keywords with rules gets no kind discriminant in

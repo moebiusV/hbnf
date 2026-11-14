@@ -25,8 +25,8 @@ produces.  The preprocessor is `cpp.hbnf` (below); the tools that scan other peo
 ## Checked against gcc
 
 - **`tests/c.sh`**: 57 small files, 38 that `gcc -fsyntax-only` accepts and 19 it refuses with a syntax
-  error, all agreed on.  C backend only: the grammar uses the typedef context (`context types`,
-  `%bind`, `%scope`, `?` and `?!`), which Rust, Zig and Ada do not have yet.
+  error, all agreed on.  The grammar uses the typedef context (`context types`,
+  `%bind`, `%scope`, `in` and `not in`); the script runs the C parser, and the Rust and Zig parsers where `rustc` and `zig` are installed (it does not run the Ada one).
 - **`tests/layout.sh`** reads the same 57 files with `--layout=tape` (the parser writes a flat tape of
   words, not the tree) and agrees on every one.
 - **`tests/sqlite.sh`**: the SQLite amalgamation, fetched by the pin in `bench/pins.txt`.  `c11`, `gnu99`,
@@ -39,7 +39,7 @@ produces.  The preprocessor is `cpp.hbnf` (below); the tools that scan other peo
   are a string literal with bytes that are not UTF-8, `register void *p asm ("rbx")` and a decimal-float
   constant (`0.DD`).  By corpus: bearssl 317, c-testsuite 220, lua 40, mbedtls 177, zlib 37, lz4 48, cJSON
   35, chibicc 18, sqlite 1, c-torture 1,588.  (The original pcc work used 900 files that pcc, clang and
-  gcc all compiled; those lists are not on this machine, so this is the same projects, regenerated, and
+  gcc all compiled; those lists are not in this repository, so this is the same projects, regenerated, and
   all the files gcc accepts.)
 - **`scripts/c-scan.sh DIR...`**: the same over any directory of sources.  587 units of the prebsd checkouts
   and pcc's own sources (60 MB) and 426 of SIMH (43 MB) are also all accepted.  On 204 mutations of the SIMH
@@ -89,7 +89,7 @@ alternatives that begin alike read that beginning once (`tests/factor.sh`, `test
 
 Keywords outside the standard and GNU's common ones (`__label__`, `typeof` is done, `_Float128` and
 friends are not), semantic checks (types, undeclared names, constraints such as "two
-or more data types"), and the other backends.
+or more data types"), and a run of the C11 grammar through the Ada backend (`tests/c.sh` has none).
 
 ## The preprocessor: `cpp.hbnf`
 
@@ -97,7 +97,7 @@ The C preprocessor as a grammar: object and function macros with `#`, `##`, `__V
 `#include_next`, `#import`, `#embed`), `#line`, `#pragma once`, `_Pragma`, `#assert`, digraphs, trigraphs, the GNU predefined macros and the feature tests
 (`__has_include`, `__has_attribute`, `__has_builtin`, ...), and gcc's diagnostics.  Its tables of what gcc defines and answers are made from gcc by
 `tools/gen_gcc_tables.py` (`cpp-gnu.hbnf`, tied to the gcc named in its header: gcc 16.2.0).  The program is the parser and `tests/cpp-main.c`, which takes gcc's options
-(`-undef -nostdinc -trigraphs -I -D -U`); `cpp_output` makes the text a compiler's `-E` gives.
+(`-undef -nostdinc -trigraphs -I -D -U`); `cpp_output` makes the text a compiler's `-E` gives.  C backend only: of the 1,407 lines of `cpp.hbnf`, about 1,190 are native C in its prologue and epilogue (the lines between `{` and `}` at the start and end of the file) and about 215 are grammar; the rewrites (`=>`, `=>>`) call that C, and Rust, Zig and Ada refuse `hidden`, `hiding` and a template function.
 
 How it is checked, with gcc the authority and clang compared:
 - `sh tests/cpp.sh` (`GCC=/path/to/gcc` for another gcc): every file of `tests/cpp` against gcc's tokens, clang's, and the C99 grammar's reading of the result;

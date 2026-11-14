@@ -88,7 +88,7 @@ look past its first operand (`--no-ladder` turns it off).  Neither changes what 
 What the parser builds is the grammar's choice, not the generator's: `--layout=ast|tape|tailq|rb|NAME`
 picks the typed tree (`ast`, the default), a flat tape of words (`runtime/hbnf_tape.h`), or a daemon's
 own `sys/queue.h` or `sys/tree.h` container, and a layout is a directory,
-`layouts/NAME/layout.hbnf`.  `%emit` blocks and `rollback { }` write a tape by hand where a layout does
+`layouts/NAME/layout.hbnf` (today a layout other than `ast` and `tape` is a table of C macros read by the C backend; it is decided that layouts become rewrite grammars over the generator's intermediate representation, `LANGUAGES.md`, R708 to R712, not built).  `%emit` blocks and `rollback { }` write a tape by hand where a layout does
 not fit; the tape grammars of JSON, TOML and YAML (`corpus/*/*-tape.hbnf`) do.
 
 Ordered choice keeps the PEG property that makes conflicts impossible, and hbnf

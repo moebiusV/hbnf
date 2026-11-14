@@ -3,7 +3,7 @@
 > **2026-10-22:** hbnf will not read or bootstrap the IMP72 compiler (the user: IMP72 "is its
 > own thing and will get its own compiler"), so the sections below that ask whether hbnf
 > could be its kernel are history, not a plan.  What hbnf took from IMP72's manual stands.
-> The ALGOL 68 experiments they mention are far in the future.
+> ALGOL 68 has been a target again since 2026-11-11 (not started: `corpus/README.md`); the sentence here that called it far in the future is out of date.
 
 HyperBNF is a meta-compiler: a program that takes a description of a language and
 produces the thing that processes it.  Configuration files were where it
@@ -82,10 +82,10 @@ itself advises that conditional assignment be used "whenever possible".
 | **Tokens** | built-in `.ID` `.NUMBER` `.STRING` | classes `<NAME>`, `<VBL>`, ...; no reserved words | primitives `SPAN` `BREAK` `LEN` `ANY` ... | character-level grammar; `%scan` scanner actions; a rule is a token (automaton) when an exception names it |
 | **Code, when** | `.OUT` inline, as the parse proceeds | semantics run as productions reduce, held back until context settles which special case applies; `PRIORITY` forces them now | `.` after the match succeeds; `$` and `*f()` during it | `%action` once, after the parse, bottom-up; `%where` during it, each try (C); `%emit` as the parse proceeds, once per parse (C), and when a bit rule is written |
 | **Code is written in** | META II's own output language (assembly for its machine) | IMP itself (quoted), or compiler subroutines in IMP | SNOBOL4 itself (`DEFINE`d functions) | any language with a backend: C, Rust, Zig and Ada today, once per backend; there is no rule against assembly |
-| **Output** | assembly for an interpreter | object code through typed objects | none (strings) | a typed tree; round-trip printing; values and flat tapes written as the parse proceeds (`%emit`, `layout tape`) |
+| **Output** | assembly for an interpreter | object code through typed objects | none (strings) | a typed tree; round-trip printing; values and flat tapes written as the parse proceeds (`%emit`, `layout tape`); the rewrite rules `->`, `=>` and `=>>` (a grammar that writes its output: COBOL `COPY`, the C preprocessor) |
 | **Fresh names** | `*1`, `*2` per run of an equation | `LOCAL R IN "..."`: a unique name per use | n/a | none yet |
 | **Grammar grows** | edit the compiler's own source | syntax statements inside the program | patterns built at run time | `include`, `dialect`, `%grammar "file"` |
-| **Self-hosting** | yes | yes | no | not yet (`hbnf_schema.hbnf` is a grammar for config files, not for HyperBNF's own notation) |
+| **Self-hosting** | yes | yes | no | not yet (`hbnf_schema.hbnf` is a grammar for config files, not for HyperBNF's own notation); decided 2026-11-14 that the language back ends become hbnf rewrite grammars compiled by hbnf itself (`LANGUAGES.md`, R708 to R712; not built) |
 
 ## Your hunch about `%scan` and `%action`: yes, and the names are precedent
 

@@ -561,7 +561,10 @@ declarations, `parse_<rule>` functions, and the lexer.  The emitted lexer is a
 template parameterized by the schema's token definitions, not a fixed body.
 The templates are Mustache; they are rendered by the project's own package, `HBNF_Template`, which reads
 a template with the parser hbnf generates from `grammars/template.hbnf`, so the generator needs no
-library beyond the Ada runtime.
+library beyond the Ada runtime.  This describes the generator as it is today.  It is decided (2026-11-14,
+R708 to R712; `LANGUAGES.md`; not built, details tbd) that the four emitters and the Mustache templates are
+replaced by one emitter back end that runs a layout rewrite grammar and a language rewrite grammar over the
+generator's intermediate representation, using the rewrite rules `->`, `=>` and `=>>`.
 
 The C backend is the reference and the one used for the FFI story: a shared
 library `libhbnfconf` (built from `tests/server_ffi.hbnf`, whose epilogue

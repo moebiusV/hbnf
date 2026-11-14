@@ -2,7 +2,7 @@
 
 Parent: [All Projects](https://moebiusv.github.io/) | Git Repo: [github.com/moebiusV/hbnf](https://github.com/moebiusV/hbnf) | `git clone https://github.com/moebiusV/hbnf`
 
-> **Status, 31 October 2026.**  JSON, TOML and YAML are built and tested in all four backends
+> **Status, 14 November 2026.**  JSON, TOML and YAML are built and tested in all four backends
 > (TOML against toml-test and `tomllib`, YAML against the YAML test suite and PyYAML), and are
 > measured against the libraries people use for them, on glibc.  C is a family of grammars, each
 > checked against its own era's yacc grammar and compiler: `c79` (UNIX/32V's C, run over the 32V
@@ -11,15 +11,23 @@ Parent: [All Projects](https://moebiusv.github.io/) | Git Repo: [github.com/moeb
 > SQLite amalgamation.  A grammar chooses the structure its parser builds: the typed tree (layout
 > `ast`, the default), a flat tape of words (`tape`, `runtime/hbnf_tape.h`), or BSD's
 > `sys/queue.h` and `sys/tree.h` containers (`tailq`, `rb`).  `%emit` blocks write the tape by hand
-> where a layout does not fit.  The parsers read alternatives that begin alike once, and a ladder of
-> binary operators with one look past its first operand.  The code templates are rendered by the
-> project's own Mustache package, `HBNF_Template`, so libhbnf depends on nothing outside the GNAT
-> runtime.
+> where a layout does not fit (`%emit` is for the smaller things; the main mechanism decided for
+> turning a grammar's tree into output is the rewrite rules `->`, `=>` and `=>>`).  The parsers read
+> alternatives that begin alike once, and a ladder of binary operators with one look past its first
+> operand.  The code templates are rendered by the project's own Mustache package, `HBNF_Template`,
+> so libhbnf depends on nothing outside the GNAT runtime.  That is today's state, not the design:
+> it is decided that the Mustache templates and the per-language Ada emitters are replaced by layout
+> and language rewrite grammars (`LANGUAGES.md`, R708 to R712; not built, details tbd).
+> Built since then: the rewrite rules (`=>`, `=>>`, `->`), facts, the set-logic operators (`one of`,
+> `all of`, `any of` and the rest) and fixed-format COBOL, in the four backends except where
+> `ABNF.md` says C only; and, in C only, COBOL `COPY` and `REPLACE` as rewrites and the C
+> preprocessor as a grammar (`corpus/c/cpp.hbnf`, checked against gcc 16.2).
 > Next: the tape layout for `str`, `bool`, `flag` and the fixed-width numbers and for the Rust, Zig and
 > Ada backends (`RFCPLAN.md`), C17 and C23 for the C family, the C grammars through LLVM's ORC JIT and
-> lld, the C preprocessor grammar and the typedef context for C, error recovery, grammars for COBOL,
-> ALGOL 68 and C++ (full GLR where they need it, paid for only by the grammar that uses it), and the
-> benchmark of the four backends against each other (the numbers here are the C backend's).
+> lld, the typedef context for C in Rust, Zig and Ada, the language directories of `LANGUAGES.md`,
+> error recovery, the rest of COBOL, grammars for ALGOL 68 and C++ (full GLR where they need it, paid
+> for only by the grammar that uses it), and the benchmark of the four backends against each other
+> (the numbers here are the C backend's).  The work list is `TODO.md`.
 
 **HyperBNF** is a grammar language, and `hbnf` is the program that reads it: a parser generator
 (a compiler compiler) that emits a parser and its typed tree in C, Rust, Zig or Ada.  The name is an
@@ -91,6 +99,8 @@ to the OpenBSD configuration files.
 **The design and its plan**
 - [`WHY.md`](WHY.md): the grammar and its design choices, for an RFC reader.
 - [`RFCPLAN.md`](RFCPLAN.md): the plan, its decisions and its status, step by step.
+- [`LANGUAGES.md`](LANGUAGES.md): the decided pipeline from grammar to generated parser (front end, operations, layout transformer, language transformer) and the `languages/` directories; the authoritative statement of the generator's architecture.
+- [`TODO.md`](TODO.md): what is built, what is left to do, and the questions waiting for the author.
 - [`decisions-and-status.md`](decisions-and-status.md): each design and implementation choice with its rationale and precedents, and whether it is done, left to do, rejected or left in the air. The author's messages it cites are rows [R<n>] of the [decision register](decision-register.md).
 - [`ABNF.md`](ABNF.md): the notation against RFC 5234, feature by feature.
 - [`CONTEXTS.md`](CONTEXTS.md): design notes, reviewed and kept current: how a rule says it is in a context (an embedded language, a picture string), has an attribute, or is a kind of thing; what is decided and what is built is in the table at the top.
@@ -117,7 +127,7 @@ to the OpenBSD configuration files.
   [RFC 5322](corpus/rfc/rfc5322-1.md), [RFC 9112](corpus/rfc/rfc9112-1.md).
 - [`corpus/posix/shell.md`](corpus/posix/shell.md): the POSIX shell grammar, read as the standard prints it, checked against dash on every script on the machine.
   ([`corpus/posix/posix-shell-1.md`](corpus/posix/posix-shell-1.md) is the standard's text it is read from.)
-- [`corpus/c/README.md`](corpus/c/README.md): C in six grammars (`c79`, `c89`, `c99`, `pcc99`, `gnu99`, `c11`), each against its era's yacc grammar and compiler; [`corpus/c/originals/README.md`](corpus/c/originals/README.md) lists the original grammars they are counted against.
+- [`corpus/c/README.md`](corpus/c/README.md): C in six grammars (`c79`, `c89`, `c99`, `pcc99`, `gnu99`, `c11`), each against its era's yacc grammar and compiler, and the C preprocessor as a seventh grammar (`cpp.hbnf`, with gcc's tables in `cpp-gnu.hbnf`); [`corpus/c/originals/README.md`](corpus/c/originals/README.md) lists the original grammars they are counted against.
 - [`corpus/algol60/README.md`](corpus/algol60/README.md): the ALGOL 60 report and its BNF.
 - [`corpus/imp72/README.md`](corpus/imp72/README.md): the IMP72 compiler's sources (cancelled as a target: IMP72 will get its own compiler).
 - [`corpus/cobol/README.md`](corpus/cobol/README.md): COBOL in free format and in the fixed reference format (`cobol-fixed.hbnf`, with `where (col ...)`, in all four backends), checked against GnuCOBOL's `cobc` and the NIST suite; a core of the language, begun.
@@ -316,7 +326,7 @@ numbers are `bench/libs.sh`.
 | sax (Node) | nothing (handlers count) | 114 ms | 18 MB/s | 69 MB | 35.5x | ❌ 20 of 34 |
 | fast-xml-parser (Node) | JavaScript objects | 271 ms | 7 MB/s | 113 MB | 58.4x | ❌ 0 of 34 |
 
-_2026-11-05; glibc 2.41, gcc (Debian 14.2.0-19) 14.2.0, node 20.19.2, Python 3.13.5; `-O2`, the same sources and flags for every native library; hbnf f95d41d.  simdjson is its DOM API; the C++ and Rust libraries, Python, Node and the YAML parsers build their own value types, and hbnf builds the typed tree its grammar describes, except in the row that says `%emit tape`: that grammar writes a flat tape of 64-bit words and builds no tree.  The XML parsers: expat 2.9.0, libxml2 2.12.7, pugixml 1.14, TinyXML-2 11.0.0, RapidXML 1.13 (Marcin Kalicinski's original, unmaintained since 2009), lxml 5.4.0, fast-xml-parser 5.11.2, sax 1.6.1; the first six are Debian packages, the Node ones are locked by `bench/libs/node/package-lock.json`.  Every XML parser reads the same catalog and must find the same number of elements, of attributes (not counting xmlns declarations) and of non-blank bytes of text, references decoded, as ElementTree does (a driver that cannot count something does not, and a mismatch is a `check failed` row).  The time is the parse call alone; the counting walks of the tree parsers come after the clock.  expat, libxml2's SAX2 and sax build nothing, their handlers count, and the expat row that copies makes a small tree of names, attributes and text.  pugixml and RapidXML parse the buffer in place, the others leave it alone.  hbnf's XML grammar is measured twice: its typed tree and the same grammar under `--layout=tape` (the tape holds the elements, attributes and texts as 64-bit words; the driver counts from it), and that tree and that tape is the grammar's concrete syntax (a reference is a node and characters are not decoded).  The last column is `bench/xml-conformance.sh` (`bench/results/xml-conformance.md`): of 34 documents that each break one well-formedness constraint of XML 1.0 (a forbidden control character, invalid UTF-8, `]]>` or `<` where they may not be, two root elements, a bad character reference, a duplicate attribute, an undeclared entity ...), how many the parser refuses; ❌ marks a parser that does not refuse all of them or refuses a well-formed one; conforming parsers are left unmarked.  Expat, libxml2, ElementTree and lxml refuse all of them (34 of 34).  **pugixml (8 of 34), TinyXML-2 (9 of 34) and RapidXML (7 of 34) are not conforming XML parsers**: they check the structure of the tags and accept most content that XML forbids, and fast-xml-parser's `parse` (0 of 34) does not check well-formedness at all (the library has a separate `XMLValidator`, which this table does not time).  hbnf's grammar refuses 34 of 34.  A parser that skips checks does less work, so the time column is not like for like for the marked rows.  The check is done once and kept: a parser is checked again only when its version, the case set or, for hbnf, its grammar or generator changes.  **Measured on a busy machine, as quiet as it would get** (`fuzzy_search` on cores 0-4 and a VM; the YAML probe read 18.0-19.2 ms before and after, against 8.4-9.6 when quiet; load average 9; best of 9 runs each in place of 5, to catch the quieter moments; one core).  The reference rows say how much it cost: RapidJSON 5.1 ms (5.0 quiet), tomlc17 38 (36-38) and libyaml 42 (37-41) are at their quiet readings, simdjson 2.3 (1.7) and rapidyaml 21 (15-18) are 20-35% high, and the XML parsers other than hbnf reproduce their quiet readings (libxml2 SAX2 4.8 ms, expat 8.4).  hbnf's own rows are the ones the load hurts most, because it allocates and touches many fresh pages and a page fault costs about three times as much under this load (its JSON tree read 1.9 ms and its YAML tree 8.5 on the last quiet run, its XML tree 3.4 before the grammar was made conforming): read them as upper bounds.  No figure has been adjusted.  A quiet rerun is in TODO.md._
+_2026-11-05; glibc 2.41, gcc (Debian 14.2.0-19) 14.2.0, node 20.19.2, Python 3.13.5; `-O2`, the same sources and flags for every native library; hbnf f95d41d.  simdjson is its DOM API; the C++ and Rust libraries, Python, Node and the YAML parsers build their own value types, and hbnf builds the typed tree its grammar describes, except in the row that says `%emit tape`: that grammar writes a flat tape of 64-bit words and builds no tree.  The XML parsers: expat 2.9.0, libxml2 2.12.7, pugixml 1.14, TinyXML-2 11.0.0, RapidXML 1.13 (Marcin Kalicinski's original, unmaintained since 2009), lxml 5.4.0, fast-xml-parser 5.11.2, sax 1.6.1; the first six are Debian packages, the Node ones are locked by `bench/libs/node/package-lock.json`.  Every XML parser reads the same catalog and must find the same number of elements, of attributes (not counting xmlns declarations) and of non-blank bytes of text, references decoded, as ElementTree does (a driver that cannot count something does not, and a mismatch is a `check failed` row).  The time is the parse call alone; the counting walks of the tree parsers come after the clock.  expat, libxml2's SAX2 and sax build nothing, their handlers count, and the expat row that copies makes a small tree of names, attributes and text.  pugixml and RapidXML parse the buffer in place, the others leave it alone.  hbnf's XML grammar is measured twice: its typed tree and the same grammar under `--layout=tape` (the tape holds the elements, attributes and texts as 64-bit words; the driver counts from it), and that tree and that tape is the grammar's concrete syntax (a reference is a node and characters are not decoded).  The last column is `bench/xml-conformance.sh` (`bench/results/xml-conformance.md`): of 34 documents that each break one well-formedness constraint of XML 1.0 (a forbidden control character, invalid UTF-8, `]]>` or `<` where they may not be, two root elements, a bad character reference, a duplicate attribute, an undeclared entity ...), how many the parser refuses; ❌ marks a parser that does not refuse all of them or refuses a well-formed one; conforming parsers are left unmarked.  Expat, libxml2, ElementTree and lxml refuse all of them (34 of 34).  **pugixml (8 of 34), TinyXML-2 (9 of 34) and RapidXML (7 of 34) are not conforming XML parsers**: they check the structure of the tags and accept most content that XML forbids, and fast-xml-parser's `parse` (0 of 34) does not check well-formedness at all (the library has a separate `XMLValidator`, which this table does not time).  hbnf's grammar refuses 34 of 34.  A parser that skips checks does less work, so the time column is not like for like for the marked rows.  The check is done once and kept: a parser is checked again only when its version, the case set or, for hbnf, its grammar or generator changes.  **Measured on a busy machine, as quiet as it would get** (another job on cores 0-4 and a VM; the YAML probe read 18.0-19.2 ms before and after, against 8.4-9.6 when quiet; load average 9; best of 9 runs each in place of 5, to catch the quieter moments; one core).  The reference rows say how much it cost: RapidJSON 5.1 ms (5.0 quiet), tomlc17 38 (36-38) and libyaml 42 (37-41) are at their quiet readings, simdjson 2.3 (1.7) and rapidyaml 21 (15-18) are 20-35% high, and the XML parsers other than hbnf reproduce their quiet readings (libxml2 SAX2 4.8 ms, expat 8.4).  hbnf's own rows are the ones the load hurts most, because it allocates and touches many fresh pages and a page fault costs about three times as much under this load (its JSON tree read 1.9 ms and its YAML tree 8.5 on the last quiet run, its XML tree 3.4 before the grammar was made conforming): read them as upper bounds.  No figure has been adjusted.  A quiet rerun is in TODO.md._
 
 <!-- /bench:libs -->
 
@@ -438,7 +448,7 @@ _2026-11-02; amd64, glibc (Debian), Rakudo v2024.09; hbnf d9f7a84.  The Raku mod
 
 ## Building
 
-Pure Ada on the GNAT runtime, no C dependency.  The code templates are rendered by the
+Pure Ada on the GNAT runtime, no C dependency.  The code templates are rendered (today; decided to be replaced by language rewrite grammars, `LANGUAGES.md`, R708 to R712) by the
 library's own Mustache package, `HBNF_Template` (`hbnf_template.ads`); it reads a template with the
 parser hbnf makes of `grammars/template.hbnf` (`hbnf_template_syntax*`, regenerated by
 `scripts/gen-template-syntax.sh`, tested by `tests/template.sh`).

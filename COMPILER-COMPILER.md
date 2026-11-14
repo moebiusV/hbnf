@@ -9,12 +9,12 @@ HyperBNF is not yacc with a prettier surface syntax.  Its useful combination is:
 - `%scan{}` for target-language scanner escape hatches;
 - `%action{}` for target-language semantic construction, run once after the parse;
 - `%where{}` for a test that runs each time an alternative is tried, and `%emit{}` for code that runs
-  as the parse proceeds (a value, a tape; C backend), with `rollback { }` to undo what a given-up form did.
+  as the parse proceeds (a value, a tape; all four backends, the tape layouts are C), with `rollback { }` to undo what a given-up form did.
 
 The next layer makes those mechanisms compiler-quality rather than importing
 legacy yacc interfaces: locations, named typed semantic values, explicit
 parser/scanner context, scanner modes, input abstraction, recovery, and a
-shared semantic IR should *surround* `%scan{}` and `%action{}`.  See
+shared semantic IR should *surround* `%scan{}` and `%action{}`.  (The intermediate representation of about 40 operations that `LANGUAGES.md` describes, decided 2026-11-14, R708, is the generator's own, between its front end and its output; it is not this one.)  See
 `RFCPLAN.md` §"Compiler-compiler completion criteria" and the Order steps 6–9.
 
 ## RFC copy-paste
@@ -56,3 +56,9 @@ languages **Go**, **Java**, **JavaScript**, **C#**, **F#**, **Julia**,
 Clojure through the same jar, so they need no backend of their own.  A
 separate C++ backend appears only if C++ needs more than an `extern "C"`
 header guard.
+
+How a backend is added: today it is a new emitter written in Ada (and a set of Mustache templates).  Decided
+2026-11-14 (R708 to R712; `LANGUAGES.md`; not built, details tbd): a directory under `languages/` holding a
+rewrite grammar, chosen by one emitter back end, that rewrites the layout-shaped intermediate representation into
+source text with `->`, `=>` and `=>>`, compiled to a `.o` and linked or run interpreted; a new language then
+needs no Ada.  `%emit` stays for the smaller things.
