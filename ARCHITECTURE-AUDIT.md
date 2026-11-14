@@ -31,7 +31,8 @@ Status vocabulary (the author's rule): a decision stays a decision when its deta
 8. **The builder is "a compile plus packaging concern"**: languages that emit no `.o` files (python, node) still need their emitted
    files wired together to run and to be packaged, and the builder must know how.  R718.  It generates the makefiles, configure files
    and infrastructure for building the emitted code and `.o` files into a project, and a command that packages the project up, for
-   sharing and inspection; it need not compile anything itself.  R719.
+   sharing and inspection; it need not compile anything itself.  R719.  It emits that infrastructure without running it, as hbnf
+   emits parser code without running it, and each builder is its own grammar with an epilogue.  R720.
 9. **"Jets" is fine, "it is a term of art"** (R713): the removal of the word in R352 is withdrawn.
 
 Details tbd: what wiring and packaging each language needs and the form of the packaging command (R718, R719), whether the layout's output is a different IR format or the same one, how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),
