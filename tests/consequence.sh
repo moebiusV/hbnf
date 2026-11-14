@@ -1,10 +1,10 @@
 #!/bin/sh
-# `=>` consequences (CONTEXTS.md section 30), as built, in the C backend:
+# `=>` consequences (CONTEXTS.md section 30), as built; every grammar runs in the C backend, and in Rust and Zig where `run` says so:
 #   names.hbnf   `set += tag` and `set -= tag` on a context
 #   macros.hbnf  facts (`tag.attr = tag`) and a rewrite (`=> template [with tag.attr = tag]`): the match is replaced
-#                and the parse starts again on the new text
-# Each grammar is built with the checker of corpus/c/check.c and run on each case of its file (ok or bad); the other
-# backends must refuse them, by rule name.
+#                and the parse (in C) goes on reading at the start of the new text
+# Each grammar is built with the checker of corpus/c/check.c and run on each case of its file (ok or bad); `run`
+# below says which other backends are also run, and which must refuse a form, by rule name.
 #   HBNF=/path/to/hbnf sh tests/consequence.sh      (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."

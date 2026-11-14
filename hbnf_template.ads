@@ -1,6 +1,8 @@
 pragma Ada_2022;
 
---  HBNF_Template: the Mustache the code generators are written in, rendered here.
+--  HBNF_Template: the Mustache the code templates (templates/*.tmpl: prologues, type declarations and fixed
+--  runtime text) are written in, rendered here.  The per-rule parser logic is Ada in each backend, not templates.
+--  Decided direction: layout and language rewrite grammars, see LANGUAGES.md.
 --
 --  A template is read by the parser hbnf makes of grammars/template.hbnf (HBNF_Template_Syntax, generated and
 --  kept in the source tree: `sh scripts/gen-template-syntax.sh` writes it again), and rendered against a

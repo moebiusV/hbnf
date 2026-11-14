@@ -138,7 +138,7 @@ package body HBNF_Grammar is
    Rollback_Text : Unbounded_String;
 
    --  `layout ast|tape|NAME` (or --layout=): the data structure the parser builds.  A NAME other than
-   --  tree and tape is a directory layouts/NAME of the layouts directory (layout.hbnf), which a grammar fragment reads
+   --  ast and tape is a directory layouts/NAME of the layouts directory (layout.hbnf), which a grammar fragment reads
    --  as an include: its prologue, its layout_ops, its epilogue.
    Layout_Text  : Unbounded_String := To_Unbounded_String ("ast");
    Layout_Given : Boolean := False;
@@ -2809,7 +2809,7 @@ package body HBNF_Grammar is
                        and then Count_After (Text, I)
                      then
                         --  `( a b c ) choose 2`, `permute 1*3`: how many of the members, from n or n*m (R659);
-                        --  `with replacement` is not built yet
+                        --  `with replacement` is read below (R permute, S choose); the Rust, Zig and Ada backends refuse S (choose)
                         declare
                            J    : Natural := I;
                            Lo, Hi : Natural := 0;
@@ -5672,7 +5672,7 @@ package body HBNF_Grammar is
    --    SET -= TAG      the same text is taken out of it.
    --    tag.attr = tag2 the text kept as tag2 is the attribute `attr` of the name kept as `tag` (a fact);
    --    template [with tag.attr = tag2]   the match is replaced by the template and read again.
-   --  A value (`-> template`, the tree) is not built yet.
+   --  The tree rewrite `-> template` is not read here but by Tree_Consequence below.
    procedure Append_Switch (P : in out Parser; B : in out Element_Vectors.Vector; Tree : Boolean := False) is
       T : constant Token := Cur (P);
       Where : constant String := Integer'Image (T.Line) & ":" & Integer'Image (T.Col) & ": ";
@@ -15319,6 +15319,8 @@ package body HBNF_Grammar is
 
    --  `layout tape` (RFCPLAN.md step 17): the rules are rewritten to the ones the author would write
    --  with %emit to have the parser write a flat tape, as the tape grammars of corpus/ do by hand.
+   --  This is Ada code today (this function), not a file of layouts/; decided direction: layout and
+   --  language rewrite grammars, see LANGUAGES.md.
    --  A rule that holds fields is opened where it begins and closed where it ends; a token is one
    --  entry with its text; an enum is one entry with its value; a literal, a hidden rule, a
    --  choice of other rules and a rule that is one other rule write nothing of their own, so a
@@ -16246,7 +16248,7 @@ package body HBNF_Grammar is
       end if;
    end Set_Abnf;
 
-   --  The names of the generated code (CONTEXTS section 31, R678 to R684): every character of a rule name that is not a letter, a digit,
+   --  The names of the generated code (R678 to R684 of decision-register.md; CONTEXTS.md has no section for it): every character of a rule name that is not a letter, a digit,
    --  `_` or `-` becomes `_` (a run of them one `_`; a hyphen is a `_` in every backend already), and a name that needed that, or that is the
    --  same as another when both are folded to one case (the output languages differ in what they fold, and a `_` is dropped by some), gets a global counter as its suffix, in the
    --  order the names first appear: `_1` for the first such name, `_100` for the hundredth.  Then the prefix (`hyper_`) is put on.

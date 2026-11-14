@@ -172,8 +172,8 @@ package body HBNF_C is
       return To_String (Buf);
    end C_Escape;
 
-   --  The C list container.  A grammar may override each operation with a
-   --  top-level `list-<op> { … }` directive: raw C with @name@ (the head's
+   --  The C list container.  A grammar or layout may override each operation in a
+   --  `layout_ops { <op> { … } }` block: raw C with @name@ (the head's
    --  struct tag), @elem@ (the element type), @h@ (a head-pointer
    --  expression), @e@ (a node pointer) and @v@ (a node-pointer variable)
    --  substituted.  An operation without an override falls back to hbnf's
@@ -2443,8 +2443,6 @@ package body HBNF_C is
       --  one value per distinct leading keyword, so the tree records which
       --  alternative matched.  A list rewritten from left recursion (Base)
       --  has a first value, <CN>_BASE, for its first entry, the base.
-      --  Render a template from the table of name/value rows (RFCPLAN.md
-      --  step 3: a hole with no row is Render's error).
       function Kind_Enum (CN : String; Tags : String_Vectors.Vector;
                           Base : Boolean := False)
          return String is
@@ -6832,7 +6830,7 @@ package body HBNF_C is
                   when Block =>
                      case E.Op is
                         when B_Emit =>
-                           null;  --  refused before emission until it is generated
+                           null;  --  no field of its own; its code is written with the sequence, in the quiet pass
                         when B_Any_Order =>
                            null;  --  written, with its members, by the loop above
                         when B_Add | B_Remove =>
@@ -9790,7 +9788,7 @@ package body HBNF_C is
                       (To_String (Rules (1).Pattern (1).Name))
          then C_Name (To_String (Rules (1).Pattern (1).Name)) else "");
 
-      --  `statements`: what the driver (templates/statements.c) needs from
+      --  `statements`: what the driver (templates/c_statements.tmpl) needs from
       --  the grammar -- the root list's operations, whether an action
       --  has already reported a failed bind, and the `macros` and
       --  `includes` rules tried on each parsed statement.

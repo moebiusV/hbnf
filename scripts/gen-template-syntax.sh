@@ -1,5 +1,5 @@
 #!/bin/sh
-# Writes HBNF_Template_Syntax, the reader of the Mustache templates the code generators are written in: the Ada
+# Writes HBNF_Template_Syntax, the reader of the Mustache templates (prologues, type declarations and fixed runtime text of the generated code): the Ada
 # parser hbnf makes of grammars/template.hbnf, kept in the source tree because hbnf is built with it (hbnf
 # cannot be built before it has been built).  Run it again after a change to the grammar, and with a hbnf built
 # from the old reader if the generator changed in a way that matters to it; tests/template.sh checks that

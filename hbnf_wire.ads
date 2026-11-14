@@ -8,7 +8,7 @@ with Interfaces;
 --  (HBNF_Grammar) reads the bit forms as ordinary elements of the notation; a
 --  rule that holds one is a bit rule, and HBNF_Wire.Lower turns the bit rules
 --  into the tree declared here, which Check examines and the emitters
---  (HBNF_Wire.C, HBNF_Wire.Rust) turn into a parser and a writer over a buffer
+--  (HBNF_Wire.C, .Rust, .Zig and .Ada_Lang) turn into a parser and a writer over a buffer
 --  of bits.  Nothing here reads a file.
 --
 --  The forms, as the main reader gives them:

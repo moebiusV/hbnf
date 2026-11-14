@@ -13,8 +13,8 @@ pragma Ada_2022;
 --  Zig errors carry no message, so the message and the octet are filled in
 --  through the pointer.  What the parser allocates (the octets, the entries,
 --  the messages) comes from alloc and is not freed one by one: give it an arena.
---  The same grammar the C backend reads, with the same checks and messages (but
---  not `name:bitsof(rule)`, which only C has so far).
+--  The same grammar the C backend reads, with the same checks and messages,
+--  `name:bitsof(rule)` included.
 package HBNF_Wire.Zig is
 
    function Emit (G : Grammar) return String;

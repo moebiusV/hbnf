@@ -4,7 +4,9 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with HBNF_Grammar;
 
---  HBNF_Compilable: schema shapes the compiled backends cannot yet express.
+--  HBNF_Compilable: schema shapes the compiled backends cannot express.  (The paragraph below is the
+--  package's first purpose; it also holds the character-class analysis, the %emit and consequence
+--  checks and the guess of which language a native block is written in.)
 --
 --  The emitters flatten a group inside a sequence into plain concatenation,
 --  so an alternation, an optional or a repetition there used to compile into
@@ -72,7 +74,7 @@ package HBNF_Compilable is
    --  Iter is a repetition of what is not one code point a time: a group, or a rule, with a lookahead or
    --  a repetition of its own inside (`*( !"]]>" any )`).  Lo and Hi are the least and the most times
    --  (Hi = 0: no most), Inner is one time's branches, a function named Fn like a lookahead's, which
-   --  says how much of the longest branch matches (0: none).  Only the C backend gets one (see
+   --  says how much of the longest branch matches (0: none).  The C, Rust, Zig and Ada backends get one (see
    --  HBNF_Grammar.Set_Scan_Look); like a Repeat it takes as many as match, and does not give any back.
    --  Col_Test is `x where (col = 6)`: Lo numbers the condition (Col_Cond), as written; a backend writes it in its language
    --  (HBNF_Grammar.Col_Condition_Text) on `c_`, the column; it moves nothing.

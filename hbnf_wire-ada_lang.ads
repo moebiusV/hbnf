@@ -17,8 +17,8 @@ pragma Ada_2022;
 --      procedure Emit_Bytes  (V : Root; Bytes : out Octets;
 --                             Ok : out Boolean; Message : out Unbounded_String);
 --
---  The same grammar the C backend reads, with the same checks and messages (but
---  not `name:bitsof(rule)`, which only C has so far).
+--  The same grammar the C backend reads, with the same checks and messages,
+--  `name:bitsof(rule)` included.
 package HBNF_Wire.Ada_Lang is
 
    function Emit (G : Grammar; Package_Name : String) return String;

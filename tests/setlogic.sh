@@ -4,11 +4,11 @@
 #   - `x in S`, `x ∈ S` are `x ? S`; `x not in S`, `x ∉ S` are `x ?! S` (tests/setlogic/member*.hbnf);
 #   - `in ( "a" "ab" )` at the start of an alternative is one of the literals, the longest first: `"ab" | "a"`, an enum, and it
 #     does not hide a member that is the front of another;
-#   - `one of ( ... )` is `in ( ... )`; `a intersect b` (and `a ∩ b`) reads b over exactly the text a matched, in C so far;
+#   - `one of ( ... )` is `in ( ... )`; `a intersect b` (and `a ∩ b`) reads b over exactly the text a matched, in all four backends;
 #   - `all of ( a [b] c )`: each member once, in any order, one field for each member; `some of ( a b c )` one or more of them, `any of ( a b c )`
 #     none or more; `( a b c ) choose 2` takes 2 of them in the order written (3 shapes), `permute 2` in any order (6 shapes), the count n or n*m;
-#     in C so far (the other backends refuse them by rule name);
-#   - `x in ( "a" "b" )` after an element: the text x matched is one of them (C so far); `x in X not in Z` chains the tests.
+#     in all four backends (`choose ... with replacement` is C only: Rust, Zig and Ada refuse it by rule name);
+#   - `x in ( "a" "b" )` after an element: the text x matched is one of them (all four backends); `x in X not in Z` chains the tests.
 #   HBNF=/path/to/hbnf sh tests/setlogic.sh      (default ./hbnf)
 set -u
 cd "$(dirname "$0")/.."

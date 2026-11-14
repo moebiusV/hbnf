@@ -21,9 +21,9 @@ with HBNF_Wire;
 --  interpret.  `str` is a quoted string; `atom` (synonym `word`) is a
 --  bareword, not a number; `int`, `u8`..`u64`, `i8`..`i64`, `bool` and
 --  `flag` are the typed scalars (`dec` and `float` are reserved too, but no
---  backend emits them).  This package only reads the text: it turns the schema into a
---  flat list of rules and has no notion of type, struct, enum or flag.  The
---  emitters walk these rules and read the shapes:
+--  backend emits them).  This package reads the text into a flat list of rules, and
+--  also holds the rewrites made to the rules before emission (Lift, and Tape_Layout
+--  for `layout tape`).  The emitters walk these rules and read the shapes:
 --
 --     name      = str                      ; a field (single core type)
 --     tls       = flag                     ; yes/no (the `flag` core type)
@@ -206,7 +206,7 @@ package HBNF_Grammar is
                      --  (Path = "tag": Ctx is a tag bound by `as`, the text it kept names the grammar)
 
    --  True once a grammar has read `as` or `$K`: a back-reference, which the
-   --  C backend alone emits so far.
+   --  C, Rust, Zig, Ada and tree-sitter backends emit (hbnf.adb checks the backend).
    function Uses_Backref return Boolean;
 
    --  Switching grammars (`=> grammar(x)`): grammar 0 is the including
@@ -554,11 +554,11 @@ package HBNF_Grammar is
    --  scanned, never parsed, so the scanner looks at x a character at a time.
    function Is_Hidden (Nm : String) return Boolean;
 
-   --  The C type of the value a rule has, from `name :: type = ...` (RFCPLAN.md step 15); ""
+   --  The type of the value a rule has (written in the backend's language), from `name :: type = ...` (RFCPLAN.md step 15); ""
    --  for a rule without one.  The rule's parameters, if the name has them, are left off.
    function Value_Type (Rule_Name : String) return String;
 
-   --  `rollback { a, b }`: the C lvalues that a grammar's `%emit` blocks change and that a retry
+   --  `rollback { a, b }`: the lvalues (in the backend's language) that a grammar's `%emit` blocks change and that a retry
    --  puts back; "" when the grammar does not say, and a retry past an emit is then refused.
    function Rollback_State return String;
 
@@ -569,7 +569,7 @@ package HBNF_Grammar is
    procedure Set_Layout_Dir (Dir : String);
    function Layout return String;
 
-   --  A rule with an `%emit` of its own or a declared value: the C backend generates it as a
+   --  A rule with an `%emit` of its own or a declared value: the backends generate it as a
    --  function that runs its pattern as written, and Lift leaves it alone.
    function Runs_Emits (R : Rule) return Boolean;
    --  True for a rule declared `hidden` (`hidden nl = ...`, or the line
@@ -586,8 +586,9 @@ package HBNF_Grammar is
 
    --  The C backend scans a rule of characters that holds a lookahead (`!x`, `&x`) where it likes and
    --  repeats a group (`chardata = 1*( !( "<" | "&" ) any )`), instead of parsing it a character at a
-   --  time into a node for each.  The other backends do not yet, so say it, before the schema is read,
-   --  for C only.  Without it a lookahead is allowed only in the white-space rule and what it reaches.
+   --  time into a node for each.  The C, Rust, Zig and Ada backends do (hbnf.adb passes On for them
+   --  before the schema is read); tree-sitter does not.  Without it a lookahead is allowed only in the
+   --  white-space rule and what it reaches.
    procedure Set_Scan_Look (On : Boolean);
    --  A rule of characters that is one only because of that (it holds a lookahead of its own and
    --  repeats something): the scanner is written for it in the way a lookahead needs.
@@ -604,8 +605,8 @@ package HBNF_Grammar is
    function Lift (Rules : Rule_Vectors.Vector) return Rule_Vectors.Vector;
 
    --  The top-level file's `language C|Rust|Zig|Ada`, or "C" when it has
-   --  none.  Scanner actions are C today whatever the language: the other backends
-   --  read a scanner action's token with their own lexer.
+   --  none.  A scanner action's code for C is the rule's own (written in the file's language);
+   --  for the other backends it is the `<name> = Rust { ... }` (`Zig`, `Ada`) form, see Jet_Body.
    function Language return String;
 
    --  The raw `{ ... }` code blocks before the rules (emitted before the
@@ -619,11 +620,11 @@ package HBNF_Grammar is
    --  order; "" when there are none.
    function Epilogue (Lang : String) return String;
 
-   --  The raw code overriding one C list operation, from a top-level
-   --  `list-head { … }` … `list-relink { … }` directive; "" when absent, in
+   --  The raw code overriding one C list operation, from a `layout_ops { op { … } }`
+   --  block (a layout's layout.hbnf, or a grammar); "" when absent, in
    --  which case the C emitter writes hbnf's own head/tail singly-linked
    --  list directly.  Op is one of "head", "entry", "init", "append",
-   --  "foreach", "first", "next", "relink".
+   --  "foreach", "first", "next", "relink", "key", "generate".
    function List_Override (Op : String) return String;
 
    --  The prefix declared by a top-level `prefix "pf_"` (or set with

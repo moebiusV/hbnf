@@ -1,10 +1,11 @@
 --  libhbnf: the ABNF schema engine (the grammar reader, the compilability
---  checks and the C/Rust/Zig/Ada emitters) in one static library, libhbnf.a.
+--  checks, the lookahead analysis, and the C/Rust/Zig/Ada, wire and tree-sitter emitters)
+--  in one static library, libhbnf.a.
 --  The `hbnf` command line (hbnf.gpr) is a thin wrapper over it.  Pure Ada, no
 --  C dependencies.
---  Built and gprinstalled as a static library by the ada-on-alpine aport.
+--  Can be built and gprinstalled as a static library.
 --
---  The code templates are Mustache, rendered by HBNF_Template over the parser hbnf
+--  The code templates (prologues, type declarations, fixed runtime text) are Mustache, rendered by HBNF_Template over the parser hbnf
 --  makes of grammars/template.hbnf (kept in the tree, hbnf_template_syntax*).  Nothing
 --  is needed beyond the GNAT runtime, so there is no C dependency.
 

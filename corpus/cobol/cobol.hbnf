@@ -190,7 +190,7 @@ type-clause            = "TYPE" to identifier
 default-clause         = "DEFAULT" is operand
 present-when-clause    = "PRESENT" "WHEN" condition
 invalid-when-clause    = "INVALID" "WHEN" condition
-; the VALIDATE facility's messages: one or more, after the other clauses (the any of group is at its limit of members)
+; the VALIDATE facility's messages: one or more, after the other clauses (an any of group has no limit of members)
 validate-status-clause = "VALIDATE-STATUS" is operand "WHEN" ( "ERROR" | "NO" "ERROR" ) [ "ON" ( "FORMAT" | "CONTENT" | "RELATION" | "SIZE" ) ] "FOR" identifier
 destination-clause     = "DESTINATION" identifier
 class-clause           = "CLASS" is ( "NUMERIC" | "ALPHABETIC" | "ALPHABETIC-LOWER" | "ALPHABETIC-UPPER" | user-word )

@@ -1,4 +1,4 @@
-; Mustache (https://mustache.github.io/mustache.5.html) as this project writes its code generators in it.
+; Mustache (https://mustache.github.io/mustache.5.html) as this project writes its code templates in it (the per-rule parser logic is Ada in each backend).
 ; The syntax of a template, and nothing of how it is rendered (HBNF_Template does that, over the tree hbnf
 ; makes of this; scripts/gen-template-syntax.sh writes the parser).
 ;

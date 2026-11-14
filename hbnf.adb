@@ -28,7 +28,7 @@ with HBNF_Wire.Ada_Lang;
 --  hbnf: read a schema and emit a self-contained parser (declarations +
 --  lexer + parser) in the chosen backend language.
 --
---    hbnf schema.hbnf --backend=c|rust|zig|ada [--package=NAME] [--root=RULE] [--abnf] [--idref] [--compare]
+--    hbnf schema.hbnf --backend=c|rust|zig|ada|tree-sitter [--package=NAME] [--root=RULE] [--abnf] [--idref] [--compare]
 --
 --  c/rust/zig print one compilable file to stdout; ada prints the parent
 --  package spec, then the child package spec+body (split them apart yourself).
@@ -351,7 +351,7 @@ begin
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return;
       end if;
-      --  Compact nodes are the C layout; the other backends ignore the flag.
+      --  Compact nodes: the C, Rust and Zig backends take the flag; the others ignore it.
       HBNF_C.Set_Compact (Compact and then not Forks);
       HBNF_Rust.Set_Compact (Compact);
       HBNF_Zig.Set_Compact (Compact);

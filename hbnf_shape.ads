@@ -7,7 +7,8 @@ with HBNF_Grammar;
 --  HBNF_Shape: what the code generators share.  The shape a rule takes in the tree (which of its
 --  elements are members, which of those repeat, which are literals), the names a member and an
 --  alternative have in a dump, and the small helpers these need.  The four backends (C, Rust,
---  Zig, Ada) read the same shape from the same rules, so it is worked out here once.
+--  Zig, Ada) read the same shape from the same rules, so the common part is worked out here once; the
+--  classification of a rule (Class_Kind) is still declared again in each backend.
 package HBNF_Shape is
 
    subtype U is Ada.Strings.Unbounded.Unbounded_String;

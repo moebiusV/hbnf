@@ -16,9 +16,9 @@ with HBNF_Template;
 --  Check the parser and the four emitters against two schema files passed on
 --  the command line.  Usage: hbnf_emit_check <server.hbnf> <hbnf_schema.hbnf>
 --  The first is the small server example, which drives the C/Ada/Rust/Zig
---  emitters; the second is the hbnf config grammar, checked at the parse
---  level (its entry/block rules are mutually recursive, which the
---  declaration-only emitters reject as a cyclic reference).
+--  emitters; the second is the hbnf config grammar (hbnf_schema.hbnf, the obconf
+--  grammar), checked at the parse level here (its entry/block rules are mutually
+--  recursive); the file's own header says it generates in any backend.
 procedure Hbnf_Emit_Check is
 
    use Ada.Strings.Unbounded;
