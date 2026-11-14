@@ -8,7 +8,11 @@
 ;   small C function (about 120 lines, the one piece of native code) evaluates it as `intmax_t` / `uintmax_t` arithmetic, which says which
 ;   branch is taken; the text of the branches is read raw until then (a `#define` in a branch that is not taken has no effect), and the
 ;   branch taken is read again.
-;   Not yet: `#include`, `#` and `##`, `__VA_ARGS__`, `__LINE__`, `__FILE__`.  A macro is not expanded inside its own expansion (`hiding N` and `x not in hidden`: `#define if x(a); if` ends), and
+;   `#` and `##` (and `__VA_ARGS__`, and gcc's `, ## __VA_ARGS__`), `__LINE__` and `__FILE__` are read; `__LINE__` is the line, in the text the user wrote, of
+;   the macro call a place came from (of its name when the call spans lines, as gcc does; clang gives the line of its closing parenthesis).
+;   `#include "x"`, `<x>` and a macro that makes one are read (files are looked for in the directory of each file read so far, newest first, then in the
+;   directories given to cpp_add_incdir); `__LINE__` and `__FILE__` in an included file are the line in it and its path.  Not yet: `#pragma once`, `#line`,
+;   `__COUNTER__`, `__DATE__`, `__TIME__`, `_Pragma`.  A macro is not expanded inside its own expansion (`hiding N` and `x not in hidden`: `#define if x(a); if` ends), and
 ;   an argument is expanded before it goes into the body (rules that expand read it); an expansion that adds a comma to an argument is split
 ;   at it, where the standard splits the argument before it is expanded.
 prefix none
@@ -18,6 +22,7 @@ whitespace none
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdio.h>
 /* A constant expression of `#if`, as the C standard has it (6.10.1): integer constants, character constants, an identifier that is no
    macro is 0, unary and binary operators, ?:, and the comma; arithmetic is intmax_t, or uintmax_t when an operand is unsigned. */
 typedef struct { intmax_t v; int u; } cpp_v;
@@ -187,6 +192,110 @@ static char *cpp_pick(const char *e, size_t en, const char *a, size_t an, const 
     return t ? cpp_dup(a, an) : cpp_dup(b, bn);
 }
 static char *cpp_pick1(const char *e, size_t en, const char *a, size_t an) { return cpp_pick(e, en, a, an, "", 0); }
+/* `__LINE__` and `__FILE__`, and `#include`.  The line is that of the place in the text the user wrote (the macro call a place came from, for text
+   a macro made; for the text of an included file, the line in that file); the file is the name the host put in cpp_file before it called
+   parse_text, or the path of the included file.  `#include "x"` looks in the directory of each file read so far, the newest first (the first
+   is cpp_file's), then in the directories the host gave to cpp_add_incdir; `#include <x>` in those only.  A file that is not found is left as an
+   #error, as a compiler stops. */
+static size_t hbnf_orig_place(const char *s, const char **file);   /* the runtime of the rewrites, below */
+static char *hbnf_src_keep(char *p);
+static void hbnf_text_from(const char *file, const char *src);
+const char *cpp_file = "";
+static const char *cpp_incdirs[32];  static int cpp_nincdirs;
+void cpp_add_incdir(const char *d) { if (cpp_nincdirs < 32) cpp_incdirs[cpp_nincdirs++] = d; }
+static char *cpp_dirs[64];  static int cpp_ndirs;
+static char *cpp_line(const char *s, size_t n) {
+    char *r = (char *)malloc(32);
+    const char *f;
+    (void)n;
+    snprintf(r, 32, "%lu", (unsigned long)hbnf_orig_place(s, &f));
+    return r;
+}
+static char *cpp_file_lit(const char *s, size_t n) {
+    const char *f, *name;
+    size_t i, k = 0, m;
+    char *r;
+    (void)n;
+    hbnf_orig_place(s, &f);
+    name = f ? f : cpp_file;
+    m = strlen(name);
+    r = (char *)malloc(2 * m + 3);
+    r[k++] = '"';
+    for (i = 0; i < m; i++) { if (name[i] == '"' || name[i] == '\\') r[k++] = '\\'; r[k++] = name[i]; }
+    r[k++] = '"';  r[k] = 0;
+    return r;
+}
+static char *cpp_dirof(const char *path) {
+    const char *sl = strrchr(path, '/');
+    size_t n = sl ? (size_t)(sl - path) : 0;
+    char *d = (char *)malloc(n + 1);
+    memcpy(d, path, n);  d[n] = 0;
+    return d;
+}
+static char *cpp_slurp(const char *path) {
+    FILE *f = fopen(path, "rb");
+    char *b;
+    long n;
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);  n = ftell(f);  fseek(f, 0, SEEK_SET);
+    if (n < 0) { fclose(f); return NULL; }
+    b = (char *)malloc((size_t)n + 2);
+    if (fread(b, 1, (size_t)n, f) != (size_t)n) { fclose(f); free(b); return NULL; }
+    fclose(f);
+    if (n > 0 && b[n - 1] != '\n') b[n++] = '\n';
+    b[n] = 0;
+    return b;
+}
+static char *cpp_try(const char *dir, const char *name, char **found) {
+    char path[8192];
+    char *t;
+    if (dir[0]) snprintf(path, sizeof path, "%s/%s", dir, name); else snprintf(path, sizeof path, "%s", name);
+    t = cpp_slurp(path);
+    if (t) *found = strdup(path);
+    return t;
+}
+static char *cpp_include(const char *s, size_t n) {
+    char name[4096];
+    char *text = NULL, *found = NULL;
+    int quoted = n > 0 && s[0] == '"', k;
+    if (n < 3 || n >= sizeof name) return cpp_dup("#error invalid #include\n", 24);
+    memcpy(name, s + 1, n - 2);  name[n - 2] = 0;
+    if (cpp_ndirs == 0) cpp_dirs[cpp_ndirs++] = cpp_dirof(cpp_file);
+    if (name[0] == '/') text = cpp_try("", name, &found);
+    if (!text && quoted) for (k = cpp_ndirs - 1; k >= 0 && !text; k--) text = cpp_try(cpp_dirs[k], name, &found);
+    for (k = 0; k < cpp_nincdirs && !text; k++) text = cpp_try(cpp_incdirs[k], name, &found);
+    if (!text) return cpp_dup("#error cannot find the include file\n", 36);
+    { char *d = cpp_dirof(found);  int i, seen = 0;
+      for (i = 0; i < cpp_ndirs; i++) if (strcmp(cpp_dirs[i], d) == 0) seen = 1;
+      if (!seen && cpp_ndirs < 64) cpp_dirs[cpp_ndirs++] = d; else free(d); }
+    hbnf_text_from(hbnf_src_keep(found), hbnf_src_keep(strdup(text)));
+    return text;
+}
+/* `(a, f(b, c), "x,y")` -> `(\005a\006,\005 f(b, c)\006,\005 "x,y"\006)`: each argument as the standard splits them (at the commas outside brackets,
+   strings, characters and comments), bracketed, so that once its macros are expanded (which may add commas) it can still be told from the next */
+static char *cpp_wrap(const char *s, size_t n) {
+    char *r = (char *)malloc(3 * n + 16), *o = r;
+    size_t i;
+    int depth = 0, q = 0;
+    *o++ = '(';  *o++ = '\005';
+    for (i = 1; i + 1 < n; i++) {
+        char c = s[i];
+        if (q) { *o++ = c; if (c == '\\' && i + 2 < n) *o++ = s[++i]; else if (c == q) q = 0; continue; }
+        if (c == '/' && i + 2 < n && s[i + 1] == '*') {
+            *o++ = c; *o++ = s[++i];
+            while (i + 2 < n && !(s[i] == '*' && s[i + 1] == '/')) *o++ = s[i++];
+            if (i + 2 < n) { *o++ = s[i++]; *o++ = s[i]; }
+            continue;
+        }
+        if (c == '"' || c == '\'') q = c;
+        else if (c == '(') depth++;
+        else if (c == ')') depth--;
+        if (c == ',' && depth == 0) { *o++ = '\006'; *o++ = ','; *o++ = '\005'; continue; }
+        *o++ = c;
+    }
+    *o++ = '\006';  *o++ = ')';  *o = 0;
+    return r;
+}
 }
 include "../../grammars/common.hbnf"
 context defs
@@ -194,26 +303,47 @@ context objs
 context funs
 
 cpp  = *item
-item = directive | comment | line-comment | string-lit | char-lit | pp-number | fun-use | obj-use | name | ~"#"
+item = directive | comment | line-comment | string-lit | char-lit | pp-number | line-use | file-use | fun-use | obj-use | name | ~"#"
+
+; the two that are not defined by a `#define`
+line-use = "__LINE__" !name-char as L                                                                    => cpp_line(L)
+file-use = "__FILE__" !name-char as F                                                                    => cpp_file_lit(F)
 
 ; a macro in use: its body, and for a function-like one with the arguments in the parentheses after it
-obj-use = name in objs not in hidden as N                                                              => N.body hiding N
-fun-use = name in funs not in hidden as N *( HB | newline ) args as A                       => N.body with N.params = A hiding N
-; the arguments are read as text that is itself being expanded, so each is expanded before it goes into the body (the standard's prescan):
-; a macro in an argument is a use like any other, and the rewrite is made there, in place, before the closing parenthesis is read
+obj-use = name in objs not in hidden as N                                                              => N.body with N.params = N hiding N
+fun-use = marker-call | fun-call
+; a call is made in two steps.  The standard expands an argument before it goes into the body, except where the body has `#` or `##`
+; next to the parameter, which take the argument as it was written; so the call is first rewritten to a marker form that carries the
+; arguments as written (`raw-args`, which nothing in it expands) and, after them, the same arguments to be expanded in place:
+;     \001 NAME \002 (as written) \003 (to be expanded) \004
+; The second rule reads the arguments, expanding the macros in them as it goes (a macro in an argument is a use like any other, and the
+; rewrite is made there, in place, before the closing parenthesis is read), then replaces the whole by the body with the parameters
+; replaced; hbnf_subst takes the two argument lists apart at \003.
+fun-call    = name in funs not in hidden as N *( HB | newline ) raw-args as R                         => "\001" N "\002" R "\003" cpp_wrap(R) "\004"
+marker-call = "\001" name as N "\002" raw-and-args as A "\004"                                           => N.body with N.params = A hiding N
+raw-and-args = raw-args "\003" args
+raw-args = "(" *raw-part ")"
+raw-part = raw-args | comment | line-comment | string-lit | char-lit | ~( "(" | ")" )
 args     = "(" *arg-part ")"
-arg-part = args | comment | line-comment | string-lit | char-lit | pp-number | fun-use | obj-use | name | ~( "(" | ")" )
+arg-part = args | comment | line-comment | string-lit | char-lit | pp-number | line-use | file-use | fun-use | obj-use | name | ~( "(" | ")" )
 
 ; the directives
-directive = define-fun | define-obj | undef | cond | other-directive
-define-obj = "#" *HB "define" 1*HB name as N !"(" body as B line-end                                   => defs += N, objs += N, N.body = B
+directive = define-fun | define-obj | undef | cond | include-dir | include-mac | other-directive
+define-obj = "#" *HB "define" 1*HB name as N !"(" empty as E body as B line-end                         => defs += N, objs += N, N.params = E, N.body = B
 define-fun = "#" *HB "define" 1*HB name as N "(" *~( ")" | CR | LF ) as P ")" body as B line-end      => defs += N, funs += N, N.params = P, N.body = B
 undef      = "#" *HB "undef" 1*HB name as N line-end                                                        => defs -= N, objs -= N, funs -= N
+; `#include`: the name is `"x"` or `<x>`, or macros that make one of those (read, expanded, and the line read again)
+include-dir  = "#" *HB "include" !name-char *HB include-name as F rest-of-line                                  => cpp_include(F)
+include-name = "\"" *~( "\"" | CR | LF ) "\"" | "<" *~( ">" | CR | LF ) ">"
+include-mac  = "#" *HB "include" 1*HB mac-text as E line-end                                                  => "#include " E "\n"
+mac-text     = ( fun-use | obj-use ) expr-text
+
 ; a directive that is not one of those and is not the end of a group (`#else`, `#elif`, `#endif`): the text of its line is left as it stands
 other-directive = "#" *HB ( directive-word rest-of-line | line-end )
 directive-word  = ( "include_next" | "include" | "pragma" | "error" | "warning" | "line" | "ident" | "assert" | "unassert" | "import" ) !name-char | DIGIT
 rest-of-line    = *( "\\" newline | ~( CR | LF ) ) line-end
 body       = *( "\\" newline | ~( CR | LF ) )
+empty      = *"\001"
 
 ; a conditional group is replaced by the branch that is taken
 cond = cond-true | cond-false | cond-expr
@@ -240,7 +370,7 @@ cond-elif-def = "#" *HB ( "ifdef" 1*HB name as N line-end skip-group as A *HB "#
               | "#" *HB "ifndef" 1*HB name as N line-end skip-group as A *HB "#" *HB "elif" !name-char expr-text as F line-end chain as R *HB "#" *HB "endif" line-end
                 => "#if !defined(" N ")\n" A "#else\n#if " F "\n" R "#endif\n#endif\n"
 chain      = skip-group *( *HB "#" *HB ( "elif" | "else" ) !name-char rest-of-line skip-group )
-expr-text  = *( defined-use | comment | line-comment | string-lit | char-lit | pp-number | fun-use | obj-use | name | "\\" newline | ~( CR | LF ) )
+expr-text  = *( defined-use | comment | line-comment | string-lit | char-lit | pp-number | line-use | file-use | fun-use | obj-use | name | "\\" newline | ~( CR | LF ) )
 defined-use = "defined" !name-char *HB "(" *HB name in defs *HB ")"       => "1"
             | "defined" !name-char *HB "(" *HB name not in defs *HB ")"   => "0"
             | "defined" !name-char 1*HB name in defs                       => "1"

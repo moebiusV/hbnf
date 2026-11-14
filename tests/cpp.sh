@@ -20,6 +20,7 @@ cat > "$W/main.c" <<'EOM'
 int main(int argc, char **argv) {
     FILE *f = fopen(argv[1], "rb"); static char buf[1 << 20]; size_t n = fread(buf, 1, sizeof buf - 1, f); buf[n] = 0; fclose(f);
     OUT_T tree; char err[2048]; size_t l, c;
+    cpp_file = argv[1];
     memset(&tree, 0, sizeof tree);
     if (parse_text(buf, &tree, err, sizeof err, &l, &c)) { fputs(hbnf_rr_buf ? hbnf_rr_buf : buf, stdout); return 0; }
     fprintf(stderr, "bad\n%s\n", err); return 1;
@@ -64,6 +65,7 @@ if [ -s "$W/rw.c" ] && grep -q 'hbnf_reread (.*, 0);' "$W/rw.c"; then
 	cat "$W/rw.c" "$W/main.c" > "$W/rwm.c"
 	cc -std=gnu11 -D_GNU_SOURCE -w -I runtime "-DOUT_T=$root" "$W/rwm.c" -o "$W/pp-rewind" 2> "$W/cc.txt" || { echo "cpp: FAIL (cc rewind: $(head -c 300 "$W/cc.txt"))"; fail=1; }
 	for f in tests/cpp/*.c; do
+		case $f in */line.c|*/include.c) continue;; esac   # `=>>` starts over on the new text, so the places it reads are no longer the ones the user wrote
 		n=$((n + 1))
 		"$W/pp-rewind" "$f" 2> /dev/null | python3 tools/cpp_tokens.py > "$W/o2.txt"
 		cmp -s "${f%.c}.expected" "$W/o2.txt" || { echo "cpp: FAIL ($f: =>> does not give gcc's tokens either)"; fail=1; }
@@ -85,5 +87,26 @@ if command -v gcc > /dev/null 2>&1; then
 		if cmp -s "$W/fg.tok" "$W/fo.tok"; then ok_=$((ok_ + 1)); else echo "cpp: FAIL (fuzz: $f is not read as gcc reads it)"; cp "$f" "$W/../cpp-fuzz-fail.c" 2> /dev/null; fail=1; fi
 	done
 	n=$((n + ok_))
+fi
+# an include file that is not there is left as an #error, as a compiler stops
+printf '#include "no_such_file.h"\nint after;\n' > "$W/inc.c"
+n=$((n + 1)); "$W/pp" "$W/inc.c" 2> /dev/null | grep -q '#error cannot find the include file' || { echo "cpp: FAIL (a missing #include is not left as an #error)"; fail=1; }
+# __FILE__ is the name the host gives (as gcc gives the name it was called with)
+printf 'a = __FILE__ ;\n#define F __FILE__\nb = F ;\n' > "$W/file.c"
+n=$((n + 1)); got=$("$W/pp" "$W/file.c" 2> /dev/null | python3 tools/cpp_tokens.py)
+want=$(gcc -E -P -undef -nostdinc "$W/file.c" 2> /dev/null | python3 tools/cpp_tokens.py)
+[ -n "$got" ] && [ "$got" = "$want" ] || { echo "cpp: FAIL (__FILE__ is not the name given)"; fail=1; }
+# random macro programs (parameters, `#`, `##`, `...`, nested calls), against gcc: 300 files; the ones gcc itself refuses are left out
+if command -v gcc > /dev/null 2>&1; then
+	mkdir -p "$W/fm"; python3 tools/cpp_fuzz_macros.py 11 300 "$W/fm"
+	ok_=0; skip_=0
+	for f in "$W"/fm/*.c; do
+		gcc -E -P -w -undef -nostdinc "$f" > "$W/fg.out" 2> /dev/null || { skip_=$((skip_ + 1)); continue; }
+		python3 tools/cpp_tokens.py < "$W/fg.out" > "$W/fg.tok"
+		"$W/pp" "$f" 2> /dev/null | python3 tools/cpp_tokens.py > "$W/fo.tok"
+		if cmp -s "$W/fg.tok" "$W/fo.tok"; then ok_=$((ok_ + 1)); else echo "cpp: FAIL (macro fuzz: $f is not read as gcc reads it)"; cp "$f" "$W/../cpp-macro-fuzz-fail-$ok_.c" 2> /dev/null; fail=1; fi
+	done
+	n=$((n + ok_))
+	echo "cpp: macro fuzz $ok_ identical, $skip_ left out (gcc refuses them)"
 fi
 [ $fail -eq 0 ] && echo "cpp: OK ($n checks: macros, #if / #elif expressions and conditional groups expanded as gcc -E -P does (and 300 random #if files), and the result read by the C99 grammar)" || exit 1

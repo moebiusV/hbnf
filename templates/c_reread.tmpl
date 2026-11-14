@@ -35,14 +35,46 @@ static char *hbnf_rr_buf;                     /* the text of the last rewrite */
 /* The chain of rewrites, so that an error is reported against the text the user wrote (CONTEXTS.md section 30, R591): each
    splice is logged with where its text stands in the text it made, where the text it replaced stood in the text before, and
    the rule whose `=>` made it.  hbnf_rr_orig is the text before the first rewrite. */
-typedef struct { size_t ns, nlen, os, oe; const char *rule; } hbnf_rr_rec;
+typedef struct { size_t ns, nlen, os, oe; const char *rule; const char *file, *src; } hbnf_rr_rec;   /* file, src: the text is that of an included file */
 static hbnf_rr_rec *hbnf_rr_log;  static size_t hbnf_rr_nlog, hbnf_rr_caplog;
 static const char *hbnf_rr_orig;
 static const char *hbnf_rr_rule_;            /* the rule that asked for the rewrite waiting to be made */
+/* where hbnf_subst copied an argument's text from: a place inside that text (a name that is hidden there) goes with the copy, as gcc
+   keeps a name it has painted unexpandable wherever the token goes.  A run is [ss, ss + n) of the text being read, now at os in the text made. */
+typedef struct { size_t ss, os, n; } hbnf_cpy;
+static hbnf_cpy *hbnf_cp_new, *hbnf_cp_now;  static size_t hbnf_ncp_new, hbnf_capcp_new, hbnf_ncp_now;
+static void hbnf_cp_add(size_t ss, size_t os, size_t n) {
+    if (hbnf_ncp_new > 0 && hbnf_cp_new[hbnf_ncp_new - 1].ss + hbnf_cp_new[hbnf_ncp_new - 1].n == ss
+        && hbnf_cp_new[hbnf_ncp_new - 1].os + hbnf_cp_new[hbnf_ncp_new - 1].n == os) { hbnf_cp_new[hbnf_ncp_new - 1].n += n;  return; }
+    if (hbnf_ncp_new == hbnf_capcp_new) {
+        hbnf_capcp_new = hbnf_capcp_new ? hbnf_capcp_new * 2 : 16;
+        hbnf_cp_new = (hbnf_cpy *)realloc(hbnf_cp_new, hbnf_capcp_new * sizeof *hbnf_cp_new);
+        if (!hbnf_cp_new) hbnf_oom();
+    }
+    hbnf_cp_new[hbnf_ncp_new].ss = ss;  hbnf_cp_new[hbnf_ncp_new].os = os;  hbnf_cp_new[hbnf_ncp_new].n = n;  hbnf_ncp_new++;
+}
+/* Text that is a file's (an `#include`): native code building a template says so with hbnf_text_from (file name and contents; hbnf_src_keep
+   hands it a string to keep until the next parse), and the rewrite that is made records it, so that a place in that text is known by the
+   file and the line in it (`__LINE__`, `__FILE__`). */
+static const char *hbnf_cur_file, *hbnf_cur_src, *hbnf_rr_file, *hbnf_rr_src;
+static char **hbnf_srcs;  static size_t hbnf_nsrcs, hbnf_capsrcs;
+static char *hbnf_src_keep(char *p) {
+    if (hbnf_nsrcs == hbnf_capsrcs) {
+        hbnf_capsrcs = hbnf_capsrcs ? hbnf_capsrcs * 2 : 16;
+        hbnf_srcs = (char **)realloc(hbnf_srcs, hbnf_capsrcs * sizeof *hbnf_srcs);
+        if (!hbnf_srcs) hbnf_oom();
+    }
+    hbnf_srcs[hbnf_nsrcs++] = p;
+    return p;
+}
+static void hbnf_text_from(const char *file, const char *src) { hbnf_cur_file = file;  hbnf_cur_src = src; }
 static void hbnf_reread(size_t s, size_t e, hbnf_sb *b, const char *rule, int cont) {
     /* a rewrite is waiting already: the rest of the rules, reading the text as cut short, try again and come to the same place; the first
        request is the one that counts */
-    if (hbnf_rr) { free(b->s);  return; }
+    if (hbnf_rr) { free(b->s);  hbnf_ncp_new = 0;  hbnf_cur_file = hbnf_cur_src = NULL;  return; }
+    /* the copies hbnf_subst made go with the rewrite that is made */
+    free(hbnf_cp_now);  hbnf_cp_now = hbnf_cp_new;  hbnf_ncp_now = hbnf_ncp_new;  hbnf_cp_new = NULL;  hbnf_ncp_new = 0;  hbnf_capcp_new = 0;
+    hbnf_rr_file = hbnf_cur_file;  hbnf_rr_src = hbnf_cur_src;  hbnf_cur_file = hbnf_cur_src = NULL;
     hbnf_rr = 1;  hbnf_rr_cont = cont;  hbnf_rr_s = s;  hbnf_rr_e = e;  hbnf_rr_rule_ = rule;
     free(hbnf_rr_t);
     hbnf_rr_t = b->s ? b->s : strdup("");
@@ -72,17 +104,57 @@ static int hbnf_hidden(const parser_t *p, size_t pos, size_t len) {
 }
 /* a rewrite replaced [s, e) by tn bytes: the places move with the text, a place the replaced text is inside grows or shrinks with it, and
    a place that was in the replaced text, or that the parse has gone past (when it goes on: it does not come back), is dropped */
-static void hbnf_hide_move(size_t s, size_t e, size_t tn, int cont) {
-    size_t i, k = 0;
+static void hbnf_hide_move(const char *text, size_t s, size_t e, size_t tn, int cont) {
+    size_t i, k = 0, nadd = 0, capadd = 0, keep = 0;
+    int keep_known = 0;
+    hbnf_hide_t *add = NULL;
     for (i = 0; i < hbnf_nhide; i++) {
         hbnf_hide_t h = hbnf_hide[i];
         if (h.s >= e) { h.s = h.s - (e - s) + tn;  h.e = h.e - (e - s) + tn; }
         else if (h.s <= s && e <= h.e) h.e = h.e - (e - s) + tn;
-        else if (h.e <= s) { if (cont) { free(h.name); continue; } }
-        else { free(h.name); continue; }
+        else if (h.e <= s) {
+            /* before the rewrite, and a continuing parse does not come back to it: dropped, unless an argument that is still being read
+               may yet be copied into a body (a macro call is \001 NAME \002 ... \004 until it is replaced), and the names painted
+               in it go with the copy; the places are kept until there are so many that they are worth sorting out */
+            if (cont && hbnf_nhide > 256) {
+                if (!keep_known) {
+                    size_t q;  int depth = 0;
+                    keep = s;  keep_known = 1;
+                    for (q = 0; q < s; q++) {
+                        if (text[q] == '\001') { if (depth++ == 0) keep = q; }
+                        else if (text[q] == '\004' && depth > 0 && --depth == 0) keep = s;
+                    }
+                }
+                if (h.e <= keep) { free(h.name); continue; }
+            }
+        }
+        else {
+            /* inside the text that is replaced: where it was copied to, it is a place of its own */
+            size_t c;
+            for (c = 0; c < hbnf_ncp_now; c++) {
+                size_t lo = h.s > hbnf_cp_now[c].ss ? h.s : hbnf_cp_now[c].ss;
+                size_t hi = h.e < hbnf_cp_now[c].ss + hbnf_cp_now[c].n ? h.e : hbnf_cp_now[c].ss + hbnf_cp_now[c].n;
+                if (lo < hi) {
+                    if (nadd == capadd) { capadd = capadd ? capadd * 2 : 8; add = (hbnf_hide_t *)realloc(add, capadd * sizeof *add); if (!add) hbnf_oom(); }
+                    add[nadd].s = s + hbnf_cp_now[c].os + (lo - hbnf_cp_now[c].ss);  add[nadd].e = add[nadd].s + (hi - lo);
+                    add[nadd].name = (char *)malloc(h.nlen + 1);  if (!add[nadd].name) hbnf_oom();
+                    memcpy(add[nadd].name, h.name, h.nlen);  add[nadd].name[h.nlen] = 0;  add[nadd].nlen = h.nlen;  nadd++;
+                }
+            }
+            free(h.name);  continue;
+        }
         hbnf_hide[k++] = h;
     }
     hbnf_nhide = k;
+    for (i = 0; i < nadd; i++) {
+        if (hbnf_nhide == hbnf_caphide) {
+            hbnf_caphide = hbnf_caphide ? hbnf_caphide * 2 : 16;
+            hbnf_hide = (hbnf_hide_t *)realloc(hbnf_hide, hbnf_caphide * sizeof *hbnf_hide);
+            if (!hbnf_hide) hbnf_oom();
+        }
+        hbnf_hide[hbnf_nhide++] = add[i];
+    }
+    free(add);
     if (hbnf_rr_hn) {
         if (hbnf_nhide == hbnf_caphide) {
             hbnf_caphide = hbnf_caphide ? hbnf_caphide * 2 : 16;
@@ -98,6 +170,9 @@ static void hbnf_hide_move(size_t s, size_t e, size_t tn, int cont) {
 static char **hbnf_keep;  static size_t hbnf_nkeep, hbnf_capkeep;
 static void hbnf_reread_clear(void) {
     size_t i;
+    hbnf_ncp_new = 0;  hbnf_ncp_now = 0;
+    for (i = 0; i < hbnf_nsrcs; i++) free(hbnf_srcs[i]);
+    hbnf_nsrcs = 0;  hbnf_cur_file = hbnf_cur_src = hbnf_rr_file = hbnf_rr_src = NULL;
     for (i = 0; i < hbnf_nkeep; i++) free(hbnf_keep[i]);
     hbnf_nkeep = 0;
     for (i = 0; i < hbnf_nhide; i++) free(hbnf_hide[i].name);
@@ -118,6 +193,32 @@ static size_t hbnf_origin(size_t pos, const char *rules[4], int *nr, const char 
     }
     return pos;
 }
+/* The file and line, in the text the user wrote, of the place s of the text being read (`__LINE__`, `__FILE__`: that of the macro call a place
+   came from, and for the text of an included file the line in it).  The text parse_text was given is hbnf_text0; the text being read is the one
+   the last rewrite made, or that one before any.  *file is NULL for the text parse_text was given. */
+static const char *hbnf_text0;
+static size_t hbnf_orig_place(const char *s, const char **file) {
+    const char *base = hbnf_rr_n ? hbnf_rr_buf : hbnf_text0;
+    size_t pos, line = 1, i = hbnf_rr_nlog;
+    *file = NULL;
+    if (!base || !hbnf_text0 || s < base) return 1;
+    pos = (size_t)(s - base);
+    while (i > 0) {
+        const hbnf_rr_rec *r = &hbnf_rr_log[--i];
+        if (pos >= r->ns + r->nlen) pos = pos - r->nlen + (r->oe - r->os);
+        else if (pos >= r->ns) {
+            if (r->file) {                                  /* inside the text of an included file */
+                size_t k = pos - r->ns, j;
+                for (j = 0; j < k && r->src[j]; j++) if (r->src[j] == '\n') line++;
+                *file = r->file;
+                return line;
+            }
+            pos = r->os;
+        }
+    }
+    for (i = 0; i < pos && hbnf_text0[i]; i++) if (hbnf_text0[i] == '\n') line++;
+    return line;
+}
 /* The text with [s, e) replaced; the text of the rewrite before is given back, the caller's own is not. */
 static size_t hbnf_rr_cap;                    /* the room in hbnf_rr_buf, when a continuing rewrite made it */
 /* The text with [s, e) replaced.  cont = 0 (the parse starts over): a new text, and the one before is given back (the caller's own is not).
@@ -134,7 +235,8 @@ static const char *hbnf_splice2(const char *text, size_t len, int cont) {
     }
     hbnf_rr_log[hbnf_rr_nlog].ns = hbnf_rr_s;  hbnf_rr_log[hbnf_rr_nlog].nlen = hbnf_rr_tn;
     hbnf_rr_log[hbnf_rr_nlog].os = hbnf_rr_s;  hbnf_rr_log[hbnf_rr_nlog].oe = hbnf_rr_e;
-    hbnf_rr_log[hbnf_rr_nlog].rule = hbnf_rr_rule_;  hbnf_rr_nlog++;
+    hbnf_rr_log[hbnf_rr_nlog].rule = hbnf_rr_rule_;
+    hbnf_rr_log[hbnf_rr_nlog].file = hbnf_rr_file;  hbnf_rr_log[hbnf_rr_nlog].src = hbnf_rr_src;  hbnf_rr_file = hbnf_rr_src = NULL;  hbnf_rr_nlog++;
     if (cont && text == hbnf_rr_buf && nl + 1 <= hbnf_rr_cap) {
         r = hbnf_rr_buf;
         memmove(r + hbnf_rr_s + hbnf_rr_tn, r + hbnf_rr_e, tail);
@@ -160,66 +262,205 @@ static const char *hbnf_splice2(const char *text, size_t len, int cont) {
         hbnf_rr_cap = cap;
     }
     r[nl] = 0;
-    hbnf_hide_move(hbnf_rr_s, hbnf_rr_e, hbnf_rr_tn, cont);
+    hbnf_hide_move(text, hbnf_rr_s, hbnf_rr_e, hbnf_rr_tn, cont);
     free(hbnf_rr_t);  hbnf_rr_t = NULL;
     hbnf_rr_buf = r;  hbnf_rr = 0;  hbnf_rr_n++;
     return r;
 }
 static const char *hbnf_splice(const char *text, size_t len) { return hbnf_splice2(text, len, 0); }
-/* `with tag.params = tag2`: in what is in the buffer, each name of the comma-separated list ps is replaced by the
-   matching argument of the list as (split at the commas outside brackets and strings, blanks trimmed); both lists
-   may be kept with their outer brackets. */
-static void hbnf_subst(hbnf_sb *b, const char *ps, size_t pn, const char *as, size_t an) {
-    const char *pname[32], *aval[32];
-    size_t plen[32], alen[32];
-    int np = 0, na = 0;
+/* `with tag.params = tag2`: the buffer holds a macro's body; the parameters (the comma-separated list ps: names, the last one `...` or
+   `name...` for the rest) are replaced by the arguments (the list as), as the C standard says (6.10.3):
+     - a parameter after `#` becomes the string literal of the argument as it was written (blanks collapsed, `"` and `\` inside a string
+       or character constant escaped);
+     - a parameter next to `##` is the argument as it was written, and the two sides are joined (an empty argument joins to nothing);
+     - any other parameter is the argument after its macros have been expanded;
+     - `__VA_ARGS__` (or the name before `...`) is every argument from the first one the `...` takes, commas between;
+     - `, ## __VA_ARGS__` takes the comma away when there are no such arguments (the GNU form gcc and clang accept).
+   `as` holds the arguments twice, as written and expanded, with a \003 between (a call that has no \003 gives the same list for both), each of the expanded ones between a \005 and a \006;
+   both lists may be kept with their outer brackets.  If expanding an argument has added a comma, so that the lists differ in length, the
+   arguments as written are used for the expanded ones (the text is read again, so they are expanded there). */
+typedef struct { const char *s; size_t n; } hbnf_sl;
+static int hbnf_id0(int c) { return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
+static int hbnf_id(int c) { return hbnf_id0(c) || (c >= '0' && c <= '9'); }
+static int hbnf_ws(int c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'; }
+static int hbnf_punct(int c) { return c != 0 && strchr("+-*/%&|^<>=!.:#", c) != NULL; }
+/* the outer pair of brackets of a list kept with them goes */
+static void hbnf_unparen(const char **s, size_t *n) { if (*n >= 2 && (*s)[0] == '(' && (*s)[*n - 1] == ')') { (*s)++; *n -= 2; } }
+/* s[0, n) split at the commas outside brackets, strings and characters, each part trimmed; v holds n + 1 */
+static int hbnf_split(const char *s, size_t n, hbnf_sl *v) {
+    int na = 0, depth = 0, q = 0;
     size_t i, st = 0;
-    hbnf_sb out = { 0, 0, 0 };
-    /* the text kept with its brackets, `(x, y)`: one outer pair goes */
-    if (pn >= 2 && ps[0] == '(' && ps[pn - 1] == ')') { ps++;  pn -= 2; }
-    if (an >= 2 && as[0] == '(' && as[an - 1] == ')') { as++;  an -= 2; }
-    for (i = 0; i <= pn && np < 32; i++)
-        if (i == pn || ps[i] == ',') {
+    for (i = 0; i <= n; i++) {
+        if (i < n) {
+            char c = s[i];
+            if (q) { if (c == '\\' && i + 1 < n) i++; else if (c == q) q = 0; }
+            else if (c == '"' || c == '\'') q = c;
+            else if (c == '(') depth++;
+            else if (c == ')') depth--;
+        }
+        if (i == n || (s[i] == ',' && depth == 0 && !q)) {
             size_t a = st, z = i;
-            while (a < z && (ps[a] == ' ' || ps[a] == '\t')) a++;
-            while (z > a && (ps[z - 1] == ' ' || ps[z - 1] == '\t')) z--;
-            if (z > a) { pname[np] = ps + a;  plen[np] = z - a;  np++; }
+            while (a < z && hbnf_ws(s[a])) a++;
+            while (z > a && hbnf_ws(s[z - 1])) z--;
+            v[na].s = s + a;  v[na].n = z - a;  na++;
             st = i + 1;
         }
-    {
-        int depth = 0, q = 0;
-        st = 0;
-        for (i = 0; i <= an && na < 32; i++) {
-            if (i < an) {
-                char c = as[i];
-                if (q) { if (c == q) q = 0; }
-                else if (c == '"' || c == '\'') q = c;
-                else if (c == '(') depth++;
-                else if (c == ')') depth--;
-            }
-            if (i == an || (as[i] == ',' && depth == 0 && !q)) {
-                size_t a = st, z = i;
-                while (a < z && (as[a] == ' ' || as[a] == '\t' || as[a] == '\n')) a++;
-                while (z > a && (as[z - 1] == ' ' || as[z - 1] == '\t' || as[z - 1] == '\n')) z--;
-                aval[na] = as + a;  alen[na] = z - a;  na++;
-                st = i + 1;
-            }
+    }
+    return na;
+}
+/* `#x`: the argument as a string literal */
+static void hbnf_stringify(hbnf_sb *o, const char *s, size_t n) {
+    size_t i;
+    int q = 0, esc = 0, sp = 0;
+    hbnf_sb_add(o, "\"", 1);
+    for (i = 0; i < n; i++) {
+        char c = s[i];
+        if (q) {
+            if (c == '"' || c == '\\') hbnf_sb_add(o, "\\", 1);
+            hbnf_sb_add(o, &c, 1);
+            if (esc) esc = 0; else if (c == '\\') esc = 1; else if (c == q) q = 0;
+        } else {
+            if (hbnf_ws(c)) { sp = 1;  continue; }
+            if (sp) { hbnf_sb_add(o, " ", 1);  sp = 0; }
+            if (c == '"' || c == '\'') { q = c;  if (c == '"') hbnf_sb_add(o, "\\", 1); }
+            hbnf_sb_add(o, &c, 1);
         }
     }
-    for (i = 0; i < b->n; ) {
-        unsigned char c = (unsigned char)b->s[i];
-        if (c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
-            size_t j = i;
-            int k, hit = -1;
-            while (j < b->n && (b->s[j] == '_' || (b->s[j] >= 'a' && b->s[j] <= 'z') || (b->s[j] >= 'A' && b->s[j] <= 'Z')
-                                || (b->s[j] >= '0' && b->s[j] <= '9'))) j++;
-            for (k = 0; k < np && k < na; k++)
-                if (plen[k] == j - i && memcmp(pname[k], b->s + i, j - i) == 0) { hit = k; break; }
-            if (hit >= 0) hbnf_sb_add(&out, aval[hit], alen[hit]);
-            else hbnf_sb_add(&out, b->s + i, j - i);
-            i = j;
-        } else { hbnf_sb_add(&out, b->s + i, 1);  i++; }
+    hbnf_sb_add(o, "\"", 1);
+}
+/* an argument put where a parameter stood: a blank between it and the text next to it where the two would otherwise make one operator
+   (`-` and `-1` are `--1`); a pasted argument is joined on purpose, and has none */
+static void hbnf_putarg(hbnf_sb *o, const char *s, size_t n, int join, const char *base) {
+    if (n == 0) return;
+    size_t i;
+    if (!join && o->n > 0 && hbnf_punct((unsigned char)o->s[o->n - 1]) && hbnf_punct((unsigned char)s[0])) hbnf_sb_add(o, " ", 1);
+    /* the brackets of a `...` that spans several arguments are not part of the text */
+    for (i = 0; i < n; i++)
+        if (s[i] != '\005' && s[i] != '\006') {
+            if (base && s + i >= base) hbnf_cp_add((size_t)(s + i - base), o->n, 1);
+            hbnf_sb_add(o, s + i, 1);
+        }
+}
+static void hbnf_subst(hbnf_sb *b, const char *ps, size_t pn, const char *as, size_t an, const char *base) {
+    hbnf_ncp_new = 0;
+    const char *rs = as, *xs = as;
+    size_t rn = an, xn = an, i, bn = b->n;
+    const char *body = b->s;
+    hbnf_sl *pl, *ra, *xa;
+    int np = 0, na, nx, npf, variadic = 0, k;
+    const char *vname = "__VA_ARGS__";
+    size_t vlen = 11;
+    hbnf_sb out = { 0, 0, 0 };
+    int paste_next = 0, lhs_empty = 0;   /* the last thing written was a parameter with nothing for it, next to `##` */
+    const char *sep = memchr(as, '\003', an);
+    if (sep) { rs = as;  rn = (size_t)(sep - as);  xs = sep + 1;  xn = an - rn - 1; }
+    hbnf_unparen(&ps, &pn);  hbnf_unparen(&rs, &rn);  hbnf_unparen(&xs, &xn);
+    pl = (hbnf_sl *)malloc((pn + 1) * sizeof *pl);  ra = (hbnf_sl *)malloc((rn + 1) * sizeof *ra);  xa = (hbnf_sl *)malloc((xn + 1) * sizeof *xa);
+    if (!pl || !ra || !xa) hbnf_oom();
+    if (pn > 0) np = hbnf_split(ps, pn, pl);
+    if (np > 0 && pl[np - 1].n >= 3 && memcmp(pl[np - 1].s + pl[np - 1].n - 3, "...", 3) == 0) {
+        variadic = 1;
+        if (pl[np - 1].n > 3) { vname = pl[np - 1].s;  vlen = pl[np - 1].n - 3; }
     }
+    npf = variadic ? np - 1 : np;
+    na = hbnf_split(rs, rn, ra);
+    /* the expanded arguments are bracketed \005 .. \006, so that a comma an expansion made does not split one; without brackets, at commas */
+    if (memchr(xs, '\005', xn)) {
+        int d = 0;
+        size_t st2 = 0;
+        nx = 0;
+        for (i = 0; i < xn; i++) {
+            if (xs[i] == '\005') { if (d++ == 0) st2 = i + 1; }
+            else if (xs[i] == '\006' && d > 0 && --d == 0) {
+                size_t a2 = st2, z2 = i;
+                while (a2 < z2 && hbnf_ws(xs[a2])) a2++;
+                while (z2 > a2 && hbnf_ws(xs[z2 - 1])) z2--;
+                xa[nx].s = xs + a2;  xa[nx].n = z2 - a2;  nx++;
+            }
+        }
+    } else nx = hbnf_split(xs, xn, xa);
+    if (nx != na) { free(xa);  xa = ra;  nx = na; }
+    /* the argument of parameter k as written (raw) or expanded; the `...` takes everything from argument npf on, commas included */
+#define HB_ARG(list, cnt, k, txt, tn) do {                                                                                  \
+        if ((k) == npf && variadic) {                                                                                       \
+            if ((cnt) > npf) { (txt) = (list)[npf].s;  (tn) = (size_t)((list)[(cnt) - 1].s + (list)[(cnt) - 1].n - (list)[npf].s); } \
+            else { (txt) = "";  (tn) = 0; }                                                                                 \
+        } else if ((k) < (cnt)) { (txt) = (list)[k].s;  (tn) = (list)[k].n; }                                               \
+        else { (txt) = "";  (tn) = 0; }                                                                                     \
+    } while (0)
+    for (i = 0; i < bn; ) {
+        unsigned char c = (unsigned char)body[i];
+        if (c == '"' || c == '\'') {                          /* a string or character constant is copied as it stands */
+            size_t j = i + 1;
+            while (j < bn && body[j] != (char)c) { if (body[j] == '\\' && j + 1 < bn) j++; j++; }
+            if (j < bn) j++;
+            hbnf_sb_add(&out, body + i, j - i);  i = j;  paste_next = 0;  lhs_empty = 0;
+        } else if (c == '/' && i + 1 < bn && body[i + 1] == '*') {
+            size_t j = i + 2;
+            while (j + 1 < bn && !(body[j] == '*' && body[j + 1] == '/')) j++;
+            j = j + 2 <= bn ? j + 2 : bn;
+            hbnf_sb_add(&out, body + i, j - i);  i = j;
+        } else if ((c >= '0' && c <= '9') || (c == '.' && i + 1 < bn && body[i + 1] >= '0' && body[i + 1] <= '9')) {   /* a number: one token */
+            size_t j = i + 1;
+            while (j < bn && (hbnf_id((unsigned char)body[j]) || body[j] == '.'
+                              || ((body[j] == '+' || body[j] == '-') && (body[j - 1] == 'e' || body[j - 1] == 'E' || body[j - 1] == 'p' || body[j - 1] == 'P')))) j++;
+            hbnf_sb_add(&out, body + i, j - i);  i = j;  paste_next = 0;  lhs_empty = 0;
+        } else if (c == '#' && i + 1 < bn && body[i + 1] == '#') {     /* ## */
+            size_t j = i + 2, e;
+            /* the blank before `##` goes, unless the left side was nothing: the token before it is then not the one pasted */
+            while (!lhs_empty && out.n > 0 && hbnf_ws((unsigned char)out.s[out.n - 1])) out.n--;
+            lhs_empty = 0;
+            if (out.s) out.s[out.n] = 0;
+            while (j < bn && hbnf_ws((unsigned char)body[j])) j++;
+            /* `, ## __VA_ARGS__` with nothing for the `...`: the comma goes too */
+            e = j;
+            while (e < bn && hbnf_id((unsigned char)body[e])) e++;
+            if (variadic && out.n > 0 && out.s[out.n - 1] == ',' && e - j == vlen && memcmp(body + j, vname, vlen) == 0) {
+                /* gcc: the comma goes when the `...` has no argument, and keeps when it has an empty one (`f(x, )`); a macro that is only
+                   `...` called with `()` has none */
+                int none = na <= npf || (npf == 0 && na == 1 && ra[0].n == 0);
+                if (none) { out.n--;  out.s[out.n] = 0;  i = e;  continue; }
+            }
+            i = j;  paste_next = 1;
+        } else if (c == '#') {                                  /* # param */
+            size_t j = i + 1, e;
+            while (j < bn && hbnf_ws((unsigned char)body[j])) j++;
+            e = j;
+            while (e < bn && hbnf_id((unsigned char)body[e])) e++;
+            for (k = 0; e > j && k < np; k++) {
+                size_t len = (variadic && k == np - 1) ? vlen : pl[k].n;
+                const char *nm = (variadic && k == np - 1) ? vname : pl[k].s;
+                if (len == e - j && memcmp(nm, body + j, len) == 0) break;
+            }
+            if (e > j && k < np) {
+                const char *t; size_t tn;
+                HB_ARG(ra, na, k, t, tn);
+                hbnf_stringify(&out, t, tn);  i = e;  paste_next = 0;
+            } else { hbnf_sb_add(&out, "#", 1);  i++; }
+        } else if (hbnf_id0(c)) {
+            size_t j = i, e;
+            int hit = -1, join;
+            while (j < bn && hbnf_id((unsigned char)body[j])) j++;
+            for (k = 0; k < np; k++) {
+                size_t len = (variadic && k == np - 1) ? vlen : pl[k].n;
+                const char *nm = (variadic && k == np - 1) ? vname : pl[k].s;
+                if (len == j - i && memcmp(nm, body + i, len) == 0) { hit = k; break; }
+            }
+            if (hit >= 0) {
+                const char *t; size_t tn;
+                e = j;
+                while (e < bn && hbnf_ws((unsigned char)body[e])) e++;
+                join = paste_next || (e + 1 < bn && body[e] == '#' && body[e + 1] == '#');
+                if (join) HB_ARG(ra, na, hit, t, tn); else HB_ARG(xa, nx, hit, t, tn);
+                hbnf_putarg(&out, t, tn, join, base);
+                lhs_empty = (tn == 0 && e + 1 < bn && body[e] == '#' && body[e + 1] == '#');
+            } else { hbnf_sb_add(&out, body + i, j - i);  lhs_empty = 0; }
+            i = j;  paste_next = 0;
+        } else { hbnf_sb_add(&out, body + i, 1);  i++;  if (!hbnf_ws(c)) { paste_next = 0;  lhs_empty = 0; } }
+    }
+#undef HB_ARG
+    if (xa != ra) free(xa);
+    free(ra);  free(pl);
     free(b->s);  *b = out;
     if (!b->s) { b->s = (char *)malloc(1);  if (!b->s) hbnf_oom();  b->s[0] = 0; }
 }

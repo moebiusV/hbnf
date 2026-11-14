@@ -6890,7 +6890,7 @@ package body HBNF_C is
                                       & C_Ident_Lower (L (L'First .. D - 1)) & "_" & Tsid & ", cl_"
                                       & C_Ident_Lower (L (L'First .. D - 1)) & "_" & Tsid & ", &ps_, &pn_))"
                                       & " hbnf_subst (&sb_, ps_, pn_, p->text + cp_" & C_Ident_Lower (A) & "_" & Tsid
-                                      & ", cl_" & C_Ident_Lower (A) & "_" & Tsid & "); }");
+                                      & ", cl_" & C_Ident_Lower (A) & "_" & Tsid & ", p->text); }");
                                     Append (Buf, LF);
                                  end;
                               end if;
@@ -11427,7 +11427,7 @@ package body HBNF_C is
          Append (Res, "                  char *err, size_t errlen,"
            & " size_t *err_line, size_t *err_col) {");
          Append (Res, LF);
-         Append (Res, (if HBNF_Grammar.Uses_Reread then "    hbnf_reread_clear();" & LF else "")
+         Append (Res, (if HBNF_Grammar.Uses_Reread then "    hbnf_reread_clear();  hbnf_text0 = text;" & LF else "")
            & (if Ctx_On then "    hbnf_ctx_clear();" & LF else "")
            & (if HBNF_Grammar.Uses_Frames
               then "    hbnf_fsp = 0; hbnf_fb = 0;"
