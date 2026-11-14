@@ -6443,7 +6443,7 @@ package body HBNF_C is
                                     B := Q + 1;
                                  end if;
                               end loop;
-                              Append (R, Ind & "{ char *r_ = " & T (S0 .. K - 1) & " (" & To_String (Args)
+                              Append (R, Ind & "{ hbnf_tpl_base = sb_.n; hbnf_tpl_text = p->text; char *r_ = " & T (S0 .. K - 1) & " (" & To_String (Args)
                                 & "); if (r_) { hbnf_sb_adds (&sb_, r_); free (r_); } }" & LF);
                            end;
                            K := E + 1;
@@ -6463,7 +6463,7 @@ package body HBNF_C is
                                 & C_Ident_Lower (W (D + 1 .. W'Last)) & ", " & Tg (W (W'First .. D - 1))
                                 & ", &v_, &vn_)) hbnf_sb_add (&sb_, v_, vn_); }" & LF);
                            else
-                              Append (R, Ind & "hbnf_sb_add (&sb_, " & Tg (W) & ");" & LF);
+                              Append (R, Ind & "hbnf_sb_tag (&sb_, p->text, " & Tg (W) & ");" & LF);
                            end if;
                         end;
                      end if;
@@ -6890,7 +6890,7 @@ package body HBNF_C is
                                       & C_Ident_Lower (L (L'First .. D - 1)) & "_" & Tsid & ", cl_"
                                       & C_Ident_Lower (L (L'First .. D - 1)) & "_" & Tsid & ", &ps_, &pn_))"
                                       & " hbnf_subst (&sb_, ps_, pn_, p->text + cp_" & C_Ident_Lower (A) & "_" & Tsid
-                                      & ", cl_" & C_Ident_Lower (A) & "_" & Tsid & ", p->text); }");
+                                      & ", cl_" & C_Ident_Lower (A) & "_" & Tsid & ", p->text, st_, k_); }");
                                     Append (Buf, LF);
                                  end;
                               end if;
@@ -7365,7 +7365,11 @@ package body HBNF_C is
                            Append (Buf, LF);
                         when B_Bol =>
                            --  the position is the start of a line; nothing is consumed
-                           Append (Buf, Ind & "if (!(p->pos == 0 || p->text[p->pos - 1] == '\n')) "
+                           --  a grammar that rewrites its text asks where the place stood in the text the user wrote (a directive that a macro
+                           --  expanded to nothing was not at the start of its line: `EMPTY # define X`)
+                           Append (Buf, Ind & (if HBNF_Grammar.Uses_Reread
+                                               then "if (!hbnf_orig_bol(p->text + p->pos)) "
+                                               else "if (!(p->pos == 0 || p->text[p->pos - 1] == '\n')) ")
                              & "{ fail(p, ""the beginning of a line"", 0, p->text + p->pos, 0); "
                              & Fail & " }");
                            Append (Buf, LF);
@@ -11525,6 +11529,7 @@ package body HBNF_C is
                          else "") & LF else "")
               & "        memset(out, 0, sizeof *out);   /* the first pass left a tree here, and the fields of alternatives share space */" & LF
               & "        p = (parser_t){ text, strlen(text), 0, (size_t)-1, 0, 0, NULL, NULL, 0, 0 };" & LF
+              & (if HBNF_Grammar.Uses_Reread then "        hbnf_text0 = text;   /* what a parse that starts over reads is the text it was given */" & LF else "")
               & "        goto start_;" & LF
               & "    }" & LF
               & "    goto err;" & LF

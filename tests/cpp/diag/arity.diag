@@ -1,0 +1,4 @@
+5: error: macro 'F' requires 2 arguments, but only 1 given
+6: error: macro 'F' passed 3 arguments, but takes just 2
+7: error: macro 'G' passed 2 arguments, but takes just 1
+10: error: macro 'Z' passed 1 arguments, but takes just 0

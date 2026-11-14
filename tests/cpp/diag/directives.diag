@@ -1,0 +1,15 @@
+3: error: #error stop here
+5: warning: #warning careful
+6: error: invalid preprocessing directive #foo
+7: error: '#else' without '#if'
+8: error: '#elif' without '#if'
+9: error: '#endif' without '#if'
+10: error: no macro name given in '#define' directive
+11: error: no macro name given in '#undef' directive
+12: error: 'defined' cannot be used as a macro name
+13: error: macro names must be identifiers
+14: error: 'abc' after '#line' is not a positive integer
+15: error: '#include' expects '"FILENAME"' or '<FILENAME>'
+16: error: '#include' expects '"FILENAME"' or '<FILENAME>'
+17: warning: '__VA_ARGS__' can only appear in the expansion of a C99 variadic macro
+18: error: duplicate macro parameter 'a'

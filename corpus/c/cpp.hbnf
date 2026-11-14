@@ -11,18 +11,24 @@
 ;   `#` and `##` (and `__VA_ARGS__`, and gcc's `, ## __VA_ARGS__`), `__LINE__` and `__FILE__` are read; `__LINE__` is the line, in the text the user wrote, of
 ;   the macro call a place came from (of its name when the call spans lines, as gcc does; clang gives the line of its closing parenthesis).
 ;   `#include "x"`, `<x>` and a macro that makes one are read (files are looked for in the directory of each file read so far, newest first, then in the
-;   directories given to cpp_add_incdir); `__LINE__` and `__FILE__` in an included file are the line in it and its path.  Not yet: `#pragma once`, `#line`,
-;   `__COUNTER__`, `__DATE__`, `__TIME__`, `_Pragma`.  A macro is not expanded inside its own expansion (`hiding N` and `x not in hidden`: `#define if x(a); if` ends), and
+;   directories given to cpp_add_incdir); `__LINE__` and `__FILE__` in an included file are the line in it and its path.  `#pragma once`, `#line N ["file"]`, `_Pragma("x")`, `__COUNTER__`, `__DATE__`, `__TIME__` and the predefined `__STDC__`, `__STDC_VERSION__` (201710L, gcc's
+;   default) and `__STDC_HOSTED__` are read too (the epilogue puts the predefined macros in the contexts at the start of a parse).  A macro is not expanded inside its own expansion (`hiding N` and `x not in hidden`: `#define if x(a); if` ends), and
 ;   an argument is expanded before it goes into the body (rules that expand read it); an expansion that adds a comma to an argument is split
 ;   at it, where the standard splits the argument before it is expanded.
 prefix none
 whitespace none
+include "cpp-gnu.hbnf"
 {
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <time.h>
+#include <sys/stat.h>
+static int cpp_c23 = 1;     /* a standard in which `true` and `false` are 1 and 0 in `#if` (set by cpp_predef from -std=) */
+static char *cpp_trim(const char *s, size_t n);
+static void cpp_diag(const char *at, const char *kind, const char *fmt, ...);   /* below */
 /* A constant expression of `#if`, as the C standard has it (6.10.1): integer constants, character constants, an identifier that is no
    macro is 0, unary and binary operators, ?:, and the comma; arithmetic is intmax_t, or uintmax_t when an operand is unsigned. */
 typedef struct { intmax_t v; int u; } cpp_v;
@@ -61,6 +67,24 @@ static int cpp_esc(void) {   /* after a backslash in a character constant */
         return c;
     }
 }
+/* assertions (`#assert predicate(answer)`, GNU): the predicates and their answers, answers without blanks round them */
+static char *cpp_as_pred[256], *cpp_as_ans[256];  static int cpp_nas;
+static char *cpp_as_trim(const char *s, size_t n) {
+    char *r;
+    while (n > 0 && (*s == ' ' || *s == '\t')) { s++; n--; }
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t')) n--;
+    r = (char *)malloc(n + 1);
+    memcpy(r, s, n);  r[n] = 0;
+    return r;
+}
+static intmax_t cpp_assert_has(const char *p, size_t pl, const char *a, size_t al) {
+    char *pp = cpp_as_trim(p, pl), *aa = a ? cpp_as_trim(a, al) : NULL;
+    int i;
+    intmax_t found = 0;
+    for (i = 0; i < cpp_nas; i++) if (strcmp(cpp_as_pred[i], pp) == 0 && (!aa || strcmp(cpp_as_ans[i], aa) == 0)) found = 1;
+    free(pp);  free(aa);
+    return found;
+}
 static cpp_v cpp_primary(void) {
     cpp_v r = cpp_mk(0, 0);
     cpp_ws();
@@ -74,14 +98,61 @@ static cpp_v cpp_primary(void) {
         if (!u && v > (unsigned long long)INTMAX_MAX) u = 1;   /* too big for intmax_t: unsigned (a constant that is */
         return cpp_mk((intmax_t)v, u);
     }
-    if (*cpp_p == '\'') {
-        int v = 0;
+    /* a character constant: `'x'`, and with a prefix `L'x'` (wchar_t, int here), `u'x'` and `U'x'` (char16_t, char32_t: unsigned), `u8'x'` (unsigned char) */
+    if (*cpp_p == '\'' || ((*cpp_p == 'L' || *cpp_p == 'u' || *cpp_p == 'U') && cpp_p + 1 < cpp_e && cpp_p[1] == '\'')
+        || (cpp_p[0] == 'u' && cpp_p + 2 < cpp_e && cpp_p[1] == '8' && cpp_p[2] == '\'')) {
+        int pre = 0, nch = 0;
+        uintmax_t v = 0;
+        if (*cpp_p == 'L') { pre = 1; cpp_p++; }
+        else if (*cpp_p == 'u' && cpp_p[1] == '8') { pre = 4; cpp_p += 2; }
+        else if (*cpp_p == 'u') { pre = 2; cpp_p++; }
+        else if (*cpp_p == 'U') { pre = 3; cpp_p++; }
         cpp_p++;
-        while (cpp_p < cpp_e && *cpp_p != '\'') { int c = (unsigned char)*cpp_p++; if (c == '\\' && cpp_p < cpp_e) c = cpp_esc(); v = v * 256 + c; }
+        while (cpp_p < cpp_e && *cpp_p != '\'') {
+            int c = (unsigned char)*cpp_p++;
+            if (c == '\\' && cpp_p < cpp_e) c = cpp_esc();
+            else if (pre && c >= 0xC0) {                         /* a character of UTF-8 is one of the wide constant */
+                int more = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : 1;
+                c &= (0x3F >> more);
+                while (more-- > 0 && cpp_p < cpp_e) c = (c << 6) | ((unsigned char)*cpp_p++ & 0x3F);
+            }
+            v = pre ? (uintmax_t)(unsigned)c : (v << 8) | (unsigned)c;
+            nch++;
+        }
         if (cpp_p < cpp_e) cpp_p++; else cpp_err = 1;
-        return cpp_mk((signed char)v, 0);
+        if (pre == 1) return cpp_mk((int32_t)v, 0);
+        if (pre == 2) return cpp_mk((intmax_t)(v & 0xFFFF), 0);
+        if (pre == 3) return cpp_mk((intmax_t)(v & 0xFFFFFFFFu), 0);
+        if (pre == 4) return cpp_mk((intmax_t)(v & 0xFF), 0);
+        return nch == 1 ? cpp_mk((signed char)v, 0) : cpp_mk((int32_t)v, 0);
     }
-    if (isalpha((unsigned char)*cpp_p) || *cpp_p == '_') { while (cpp_p < cpp_e && (isalnum((unsigned char)*cpp_p) || *cpp_p == '_')) cpp_p++; return r; }
+    /* `#predicate(answer)`: an assertion made by `#assert` (GNU) */
+    if (*cpp_p == '#') {
+        const char *n0, *a0 = NULL;
+        size_t nl, al = 0;
+        cpp_p++;
+        cpp_ws();
+        n0 = cpp_p;
+        while (cpp_p < cpp_e && (isalnum((unsigned char)*cpp_p) || *cpp_p == '_')) cpp_p++;
+        nl = (size_t)(cpp_p - n0);
+        if (nl == 0) { cpp_err = 1; return r; }
+        cpp_ws();
+        if (cpp_p < cpp_e && *cpp_p == '(') {
+            const char *q = cpp_p + 1;
+            while (q < cpp_e && *q != ')') q++;
+            if (q >= cpp_e) { cpp_err = 1; return r; }
+            a0 = cpp_p + 1;  al = (size_t)(q - a0);
+            cpp_p = q + 1;
+        }
+        return cpp_mk(cpp_assert_has(n0, nl, a0, al), 0);
+    }
+    if (isalpha((unsigned char)*cpp_p) || *cpp_p == '_') {
+        const char *n0 = cpp_p;
+        while (cpp_p < cpp_e && (isalnum((unsigned char)*cpp_p) || *cpp_p == '_')) cpp_p++;
+        /* C23: `true` and `false` are 1 and 0 in the directive too (gcc 15 and later, in the standards that have them) */
+        if (cpp_c23 && cpp_p - n0 == 4 && memcmp(n0, "true", 4) == 0) return cpp_mk(1, 0);
+        return r;
+    }
     cpp_err = 1; cpp_p++;
     return r;
 }
@@ -175,6 +246,16 @@ static cpp_v cpp_cond(void) {
     return c;
 }
 static cpp_v cpp_comma(void) { cpp_v r = cpp_cond(); while (cpp_op(",")) r = cpp_cond(); return r; }
+/* the value of a constant expression, for the parameters of `#embed` */
+static int cpp_eval_int(const char *s, size_t n, intmax_t *out) {
+    cpp_v v;
+    cpp_p = s; cpp_e = s + n; cpp_err = 0; cpp_nev = 0;
+    v = cpp_comma();
+    cpp_ws();
+    if (cpp_err || cpp_p < cpp_e) return 0;
+    *out = v.v;
+    return 1;
+}
 /* 1: true, 0: false, -1: not an expression */
 static int cpp_truth(const char *s, size_t n) {
     cpp_v v;
@@ -225,6 +306,273 @@ static char *cpp_file_lit(const char *s, size_t n) {
     r[k++] = '"';  r[k] = 0;
     return r;
 }
+static unsigned cpp_ctr;                                                   /* __COUNTER__ */
+static char cpp_datebuf[16], cpp_timebuf[16];  static int cpp_timeset;       /* __DATE__ and __TIME__: the time of the first use in a parse */
+static char *cpp_once[256];  static int cpp_nonce;                           /* the files `#pragma once` was read in */
+static void hbnf_line_add(size_t ps, size_t no, const char *file);
+static size_t hbnf_orig_offset(const char *s);
+static char *cpp_counter(const char *s, size_t n) { char *r = (char *)malloc(16); (void)s; (void)n; snprintf(r, 16, "%u", cpp_ctr++); return r; }
+static char *cpp_datetime(int which) {
+    char *r = (char *)malloc(32);
+    if (!cpp_timeset) {
+        time_t t = time(NULL);
+        struct tm *tm = localtime(&t);
+        strftime(cpp_datebuf, sizeof cpp_datebuf, "%b %e %Y", tm);
+        strftime(cpp_timebuf, sizeof cpp_timebuf, "%H:%M:%S", tm);
+        cpp_timeset = 1;
+    }
+    snprintf(r, 32, "\"%s\"", which ? cpp_timebuf : cpp_datebuf);
+    return r;
+}
+static char *cpp_date(const char *s, size_t n) { (void)s; (void)n; return cpp_datetime(0); }
+static char *cpp_time(const char *s, size_t n) { (void)s; (void)n; return cpp_datetime(1); }
+/* the text of a string literal, as `#pragma` and `#line` read it: the quotes go, and `\"` and `\\` stand for the character */
+static char *cpp_destring(const char *s, size_t n) {
+    char *r = (char *)malloc(n + 1);
+    size_t i, k = 0;
+    for (i = (n > 0 && s[0] == 'L') ? 2 : 1; i + 1 < n; i++) { if (s[i] == '\\' && i + 2 < n && (s[i + 1] == '"' || s[i + 1] == '\\')) i++; r[k++] = s[i]; }
+    r[k] = 0;
+    return r;
+}
+static int cpp_once_has(const char *path) {
+    char *rp = realpath(path, NULL);
+    int i, has = 0;
+    if (!rp) return 0;
+    for (i = 0; i < cpp_nonce; i++) if (strcmp(cpp_once[i], rp) == 0) has = 1;
+    free(rp);
+    return has;
+}
+static void cpp_once_add(const char *path) {
+    char *rp;
+    if (cpp_once_has(path) || cpp_nonce >= 256) return;
+    rp = realpath(path, NULL);
+    if (rp) cpp_once[cpp_nonce++] = rp;
+}
+static char *cpp_pragma_once(const char *s, size_t n) {
+    const char *f;
+    (void)n;
+    hbnf_orig_place(s, &f);
+    cpp_once_add(f ? f : cpp_file);
+    return cpp_dup("\n", 1);
+}
+/* `_Pragma("x")` becomes a `#pragma x` line (`once` is `#pragma once`) */
+static char *cpp_pragma(const char *s, size_t n) {
+    char *t = cpp_destring(s, n), *r;
+    if (strcmp(t, "once") == 0) { free(t);  return cpp_pragma_once(s, n); }
+    r = (char *)malloc(strlen(t) + 16);
+    sprintf(r, "\n#pragma %s\n", t);
+    free(t);
+    return r;
+}
+/* `#line N` and `#line N "file"` (the operand may be macros: it is read as it is once they are expanded): from the start of the next line on, the lines are numbered
+   from N, and the file is called that */
+static const char *cpp_linefile;
+static char *cpp_line_dir(const char *s, size_t n) {
+    char *t = cpp_trim(s, n), *e;
+    unsigned long no;
+    const char *after = s + n;
+    while (*after && *after != '\n') after++;
+    if (*after) after++;
+    no = strtoul(t, &e, 10);
+    if (e == t || no == 0 && 0) {
+        { char *w = t; while (*w && *w != ' ' && *w != '\t') w++;  *w = 0; }
+        if (t[0]) cpp_diag(s, "error", "'%s' after '#line' is not a positive integer", t); else cpp_diag(s, "error", "unexpected end of file after '#line'");
+        free(t);
+        return cpp_dup("\n", 1);
+    }
+    while (*e == ' ' || *e == '\t') e++;
+    if (*e == '"') { size_t m = strlen(e);  cpp_linefile = hbnf_src_keep(cpp_destring(e, m)); }
+    hbnf_line_add(hbnf_orig_offset(after), (size_t)no, cpp_linefile);
+    free(t);
+    return cpp_dup("\n", 1);
+}
+static char *cpp_assert_dir(const char *s, size_t n) {
+    char *t = cpp_trim(s, n);
+    char *lp = strchr(t, '('), *rp = lp ? strrchr(t, ')') : NULL;
+    if (lp && rp && cpp_nas < 256) { cpp_as_pred[cpp_nas] = cpp_as_trim(t, (size_t)(lp - t));  cpp_as_ans[cpp_nas] = cpp_as_trim(lp + 1, (size_t)(rp - lp - 1));  cpp_nas++; }
+    else cpp_diag(s, "error", "missing '(' after predicate");
+    free(t);
+    return cpp_dup("\n", 1);
+}
+static char *cpp_unassert_dir(const char *s, size_t n) {
+    char *t = cpp_trim(s, n);
+    char *lp = strchr(t, '('), *rp = lp ? strrchr(t, ')') : NULL;
+    char *pred = cpp_as_trim(t, lp ? (size_t)(lp - t) : strlen(t)), *ans = (lp && rp) ? cpp_as_trim(lp + 1, (size_t)(rp - lp - 1)) : NULL;
+    int i, k = 0;
+    for (i = 0; i < cpp_nas; i++) {
+        if (strcmp(cpp_as_pred[i], pred) == 0 && (!ans || strcmp(cpp_as_ans[i], ans) == 0)) { free(cpp_as_pred[i]);  free(cpp_as_ans[i]); }
+        else { cpp_as_pred[k] = cpp_as_pred[i];  cpp_as_ans[k] = cpp_as_ans[i];  k++; }
+    }
+    cpp_nas = k;
+    free(pred);  free(ans);  free(t);
+    return cpp_dup("\n", 1);
+}
+static void hbnf_map_from(const size_t *map, size_t n);
+static unsigned hbnf_rr_count(void);
+static int hbnf_rr_pending(void);   /* the runtime of the rewrites: a rewrite is waiting to be made */
+static void (*hbnf_paste_hook)(const char *at, const char *name, size_t nl, const char *l, size_t ln, const char *r, size_t rn);
+static void cpp_paste_bad(const char *at, const char *name, size_t nl, const char *l, size_t ln, const char *r, size_t rn);
+static void cpp_arity(const char *at, const char *name, size_t nl, int np, int na, int variadic);   /* the epilogue: a call against what the macro takes */
+static void cpp_define_check(const char *text, size_t len);   /* the epilogue: what a #define says, against what the name is */
+static size_t hbnf_inc_depth(const char *s);   /* the runtime of the rewrites: how many includes the place is in */
+static char *cpp_predef(const char *s, size_t n);   /* the epilogue: it seeds the macros every compiler has */
+/* Translation phases 1 and 2: trigraphs (when the host asks for them: cpp_trigraphs, as -trigraphs or -std=c11 does) and a backslash before a newline
+   are taken out of the whole text first, once; the places that were taken out are kept, so that a line number is still the line the user wrote. */
+int cpp_trigraphs = 0;
+int cpp_std = -1;           /* the standard of -std= (an index of cpp_gnu_stds), or -1 for gcc's default */
+int cpp_set_std(const char *name) {   /* -std=NAME: 1 if it is one the tables have (gcc's aliases c90, c18, gnu90, gnu18 too) */
+    size_t i;
+    static const char *alias[][2] = { { "c90", "c89" }, { "iso9899:1990", "c89" }, { "c18", "c17" }, { "iso9899:2017", "c17" }, { "iso9899:2018", "c17" }, { "gnu90", "gnu89" },
+                                      { "gnu18", "gnu17" }, { "iso9899:1999", "c99" }, { "iso9899:2011", "c11" }, { "c9x", "c99" }, { "c1x", "c11" }, { "gnu9x", "gnu99" },
+                                      { "gnu1x", "gnu11" }, { "c2x", "c23" }, { "gnu2x", "gnu23" } };
+    for (i = 0; i < sizeof alias / sizeof *alias; i++) if (strcmp(name, alias[i][0]) == 0) name = alias[i][1];
+    for (i = 0; i < sizeof cpp_gnu_stds / sizeof *cpp_gnu_stds; i++) if (strcmp(name, cpp_gnu_stds[i]) == 0) { cpp_std = (int)i; return 1; }
+    return 0;
+}
+static int cpp_trigraph(const char *s, char *to) {
+    static const char from[] = "=(/)'<!>-", mapto[] = "#[\\]^{|}~";
+    const char *q;
+    if (s[0] != '?' || s[1] != '?') return 0;
+    q = strchr(from, s[2]);
+    if (!q || !s[2]) return 0;
+    *to = mapto[q - from];
+    return 1;
+}
+/* the length of a splice at s (a backslash, blanks, a newline), or 0 */
+static size_t cpp_splice_len(const char *s, const char *e) {
+    const char *q = s + 1;
+    if (s >= e || *s != '\\') return 0;
+    while (q < e && (*q == ' ' || *q == '\t')) q++;
+    if (q < e && *q == '\r' && q + 1 < e && q[1] == '\n') return (size_t)(q + 2 - s);
+    if (q < e && (*q == '\n' || *q == '\r')) return (size_t)(q + 1 - s);
+    return 0;
+}
+static int cpp_needs_unsplice(const char *s, size_t n) {
+    size_t i;
+    for (i = 0; i < n; i++) {
+        char c;
+        if (s[i] == '\\' && cpp_splice_len(s + i, s + n)) return 1;
+        if (cpp_trigraphs && s[i] == '?' && i + 2 < n + 0 && cpp_trigraph(s + i, &c)) return 1;
+    }
+    return 0;
+}
+static char *cpp_unsplice(const char *s, size_t n) {
+    char *r = (char *)malloc(n + 1);
+    size_t *map = (size_t *)malloc(2 * (n + 1) * sizeof *map);
+    size_t i = 0, k = 0, nm = 0;
+    while (i < n) {
+        char c;
+        size_t sl = 0;
+        if (cpp_trigraphs && i + 2 < n && cpp_trigraph(s + i, &c)) {
+            if (c == '\\' && (sl = cpp_splice_len(&c, &c + 1)) == 0 && i + 3 < n) { /* a trigraph backslash before a newline is a splice, too */ }
+            r[k++] = c;  map[2 * nm] = k;  map[2 * nm + 1] = 2;  nm++;  i += 3;
+            continue;
+        }
+        sl = cpp_splice_len(s + i, s + n);
+        if (sl) { map[2 * nm] = k;  map[2 * nm + 1] = sl;  nm++;  i += sl;  continue; }
+        r[k++] = s[i++];
+    }
+    r[k] = 0;
+    /* a trigraph that made a backslash can make a splice: go round once more over what is left (the places of the second go are not kept apart) */
+    hbnf_map_from((const size_t *)hbnf_src_keep((char *)map), nm);
+    return r;
+}
+/* A directive that is taken out of the text leaves a newline in its place, not nothing: two empty replacements in a row at one place are
+   more than the retry of a rewrite reads again.
+   Diagnostics.  `FILE:LINE: error: message` (or warning, or fatal error) on the standard error, with FILE and LINE the file and line of the text the user
+   wrote, and counted in cpp_errors and cpp_warnings; the host may take them instead (cpp_diag_hook).  What a directive reports is taken out of the text,
+   and the text goes on.  A diagnostic is given once for a line and message (a parse that reads a place again does not say it again). */
+#include <stdarg.h>
+int cpp_errors = 0, cpp_warnings = 0;
+void (*cpp_diag_hook)(const char *file, size_t line, const char *kind, const char *msg) = NULL;
+static char *cpp_seen_diag[512];  static int cpp_nseen_diag;
+static void cpp_diag(const char *at, const char *kind, const char *fmt, ...) {
+    char msg[1024], key[1400];
+    const char *f;
+    size_t line;
+    int i;
+    va_list ap;
+    /* a rewrite is waiting: what is read after the alternative that asked for it (and its template functions too) is not what is meant, and says nothing */
+    if (hbnf_rr_pending()) return;
+    line = hbnf_orig_place(at, &f);
+    va_start(ap, fmt);  vsnprintf(msg, sizeof msg, fmt, ap);  va_end(ap);
+    snprintf(key, sizeof key, "%lu|%s|%s", (unsigned long)line, kind, msg);
+    for (i = 0; i < cpp_nseen_diag; i++) if (strcmp(cpp_seen_diag[i], key) == 0) return;
+    if (cpp_nseen_diag < 512) cpp_seen_diag[cpp_nseen_diag++] = strdup(key);
+    if (kind[0] == 'w') cpp_warnings++; else cpp_errors++;
+    if (cpp_diag_hook) cpp_diag_hook(f ? f : cpp_file, line, kind, msg);
+    else fprintf(stderr, "%s:%lu: %s: %s\n", f ? f : cpp_file, (unsigned long)line, kind, msg);
+}
+static void cpp_diag_at(const char *file, size_t line, const char *kind, const char *fmt, ...) {
+    char msg[1024], key[1400];
+    int i;
+    va_list ap;
+    if (hbnf_rr_pending()) return;
+    va_start(ap, fmt);  vsnprintf(msg, sizeof msg, fmt, ap);  va_end(ap);
+    snprintf(key, sizeof key, "%s|%lu|%s|%s", file ? file : "", (unsigned long)line, kind, msg);
+    for (i = 0; i < cpp_nseen_diag; i++) if (strcmp(cpp_seen_diag[i], key) == 0) return;
+    if (cpp_nseen_diag < 512) cpp_seen_diag[cpp_nseen_diag++] = strdup(key);
+    if (kind[0] == 'w') cpp_warnings++; else cpp_errors++;
+    if (cpp_diag_hook) cpp_diag_hook(file ? file : cpp_file, line, kind, msg);
+    else fprintf(stderr, "%s:%lu: %s: %s\n", file ? file : cpp_file, (unsigned long)line, kind, msg);
+}
+/* where each macro was defined (a message about its replacement is said there) */
+static char *cpp_def_name[4096];  static size_t cpp_def_nl[4096];  static size_t cpp_def_line[4096];  static const char *cpp_def_file[4096];  static int cpp_ndef;
+static void cpp_note_def(const char *name, size_t nl, const char *at) {
+    const char *f;
+    size_t line = hbnf_orig_place(at, &f);
+    int i;
+    for (i = cpp_ndef - 1; i >= 0; i--) if (cpp_def_nl[i] == nl && memcmp(cpp_def_name[i], name, nl) == 0) { cpp_def_line[i] = line;  cpp_def_file[i] = f ? f : cpp_file;  return; }
+    if (cpp_ndef >= 4096) return;
+    cpp_def_name[cpp_ndef] = cpp_dup(name, nl);  cpp_def_nl[cpp_ndef] = nl;  cpp_def_line[cpp_ndef] = line;  cpp_def_file[cpp_ndef] = f ? f : cpp_file;  cpp_ndef++;
+}
+/* the text of the rest of a directive's line, without the blanks round it */
+static char *cpp_trim(const char *s, size_t n) {
+    while (n > 0 && (s[0] == ' ' || s[0] == '\t')) { s++; n--; }
+    while (n > 0 && (s[n - 1] == ' ' || s[n - 1] == '\t' || s[n - 1] == '\n' || s[n - 1] == '\r')) n--;
+    return cpp_dup(s, n);
+}
+/* reports that leave the text as it is (the directive is one the output has no more of: cpp_output takes out every line of directive that is left) */
+static void cpp_say(const char *at, const char *msg) { cpp_diag(at, "error", "%s", msg); }
+/* `text` is the directive as far as the rule has read it, from its `#`: the keyword after the `#` and what follows it, blanks and comments passed over */
+static const char *cpp_dir_word(const char *s, size_t n, size_t *wl, const char **rest) {
+    const char *e = s + n, *w;
+    s += (s < e && *s == '%') ? 2 : 1;
+    for (;;) {
+        if (s < e && (*s == ' ' || *s == '\t')) s++;
+        else if (s + 1 < e && s[0] == '/' && s[1] == '*') { s += 2; while (s + 1 < e && !(s[0] == '*' && s[1] == '/')) s++; s += 2; }
+        else break;
+    }
+    w = s;
+    while (s < e && (isalnum((unsigned char)*s) || *s == '_')) s++;
+    *wl = (size_t)(s - w);
+    while (s < e && (*s == ' ' || *s == '\t')) s++;
+    *rest = s > e ? e : s;
+    return w;
+}
+static void cpp_say_text(const char *at, size_t n, const char *kind, const char *prefix) {   /* `#error text`, `#warning text`, `invalid preprocessing directive #name` */
+    size_t wl;
+    const char *rest, *w = cpp_dir_word(at, n, &wl, &rest);
+    char *t, *kw = cpp_dup(w, wl);
+    if (prefix[0] == '#') { t = cpp_trim(rest, (size_t)(at + n - rest)); cpp_diag(at, kind, "#%s %s", kw, t); free(t); }
+    else cpp_diag(at, kind, "%s%s", prefix, kw);
+    free(kw);
+}
+static void cpp_say_stray(const char *at, size_t n) {
+    size_t wl;
+    const char *rest, *w = cpp_dir_word(at, n, &wl, &rest);
+    char *kw = cpp_dup(w, wl);
+    cpp_diag(at, "error", "'#%s' without '#if'", kw);
+    free(kw);
+}
+/* a call whose argument list does not end: `text` is `NAME (`, what the rule has read */
+static void cpp_unterm_call(const char *text) {
+    char name[256];
+    size_t k = 0;
+    while (k + 1 < sizeof name && (isalnum((unsigned char)text[k]) || text[k] == '_')) { name[k] = text[k]; k++; }
+    name[k] = 0;
+    cpp_diag(text, "error", "unterminated argument list invoking macro '%s'", name);
+}
 static char *cpp_dirof(const char *path) {
     const char *sl = strrchr(path, '/');
     size_t n = sl ? (size_t)(sl - path) : 0;
@@ -254,25 +602,276 @@ static char *cpp_try(const char *dir, const char *name, char **found) {
     if (t) *found = strdup(path);
     return t;
 }
-static char *cpp_include(const char *s, size_t n) {
+/* Where an include file is looked for.  `#include "x"`: the directory of each file read so far, the newest first, then the directories of the angle chain;
+   `#include <x>`: the angle chain only: the directories the host gave to cpp_add_incdir (-I), then the system directories (gcc's, from tools/gen_gcc_tables.py)
+   unless the host set cpp_nostdinc (-nostdinc).  `#include_next` goes on in the chain after the directory the current file was found in. */
+int cpp_nostdinc = 0;
+static int cpp_chain_n(void) { return cpp_nincdirs + (cpp_nostdinc ? 0 : (int)(sizeof cpp_gnu_sysdirs / sizeof *cpp_gnu_sysdirs)); }
+static const char *cpp_chain_dir(int k) { return k < cpp_nincdirs ? cpp_incdirs[k] : cpp_gnu_sysdirs[k - cpp_nincdirs]; }
+static char *cpp_fpath[256];  static int cpp_fidx[256];  static int cpp_nf;   /* the files read, and where in the angle chain each was found (-1: elsewhere) */
+static int cpp_file_idx(const char *path) {
+    int i;
+    for (i = 0; i < cpp_nf; i++) if (strcmp(cpp_fpath[i], path) == 0) return cpp_fidx[i];
+    return -1;
+}
+static char *cpp_find(const char *name, int quoted, int from, int *idx) {
+    char *found = NULL, *t;
+    int k;
+    *idx = -1;
+    if (name[0] == '/') { t = cpp_try("", name, &found); if (t) { free(t); return found; } return NULL; }
+    if (quoted && from == 0) for (k = cpp_ndirs - 1; k >= 0; k--) { t = cpp_try(cpp_dirs[k], name, &found); if (t) { free(t); return found; } }
+    for (k = from; k < cpp_chain_n(); k++) { t = cpp_try(cpp_chain_dir(k), name, &found); if (t) { free(t); *idx = k; return found; } }
+    return NULL;
+}
+/* the file the place s is in: an included file's path, or the main file's name */
+static const char *cpp_file_of(const char *s) { const char *f; hbnf_orig_place(s, &f); return f ? f : cpp_file; }
+/* `#include` (next: `#include_next`, once: `#import`): the text of the file, left for the grammar to read; a file `#pragma once` was read in is nothing */
+static char *cpp_include_k(const char *s, size_t n, const char *at, int next, int once) {
     char name[4096];
     char *text = NULL, *found = NULL;
-    int quoted = n > 0 && s[0] == '"', k;
+    int quoted = n > 0 && s[0] == '"', idx = -1;
     if (n < 3 || n >= sizeof name) return cpp_dup("#error invalid #include\n", 24);
     memcpy(name, s + 1, n - 2);  name[n - 2] = 0;
     if (cpp_ndirs == 0) cpp_dirs[cpp_ndirs++] = cpp_dirof(cpp_file);
-    if (name[0] == '/') text = cpp_try("", name, &found);
-    if (!text && quoted) for (k = cpp_ndirs - 1; k >= 0 && !text; k--) text = cpp_try(cpp_dirs[k], name, &found);
-    for (k = 0; k < cpp_nincdirs && !text; k++) text = cpp_try(cpp_incdirs[k], name, &found);
-    if (!text) return cpp_dup("#error cannot find the include file\n", 36);
+    found = cpp_find(name, quoted && !next, next ? cpp_file_idx(cpp_file_of(at)) + 1 : 0, &idx);
+    if (found) text = cpp_slurp(found);
+    if (!text) { free(found);  cpp_diag(at, "fatal error", "%s: No such file or directory", name);  return cpp_dup("\n", 1); }
     { char *d = cpp_dirof(found);  int i, seen = 0;
       for (i = 0; i < cpp_ndirs; i++) if (strcmp(cpp_dirs[i], d) == 0) seen = 1;
       if (!seen && cpp_ndirs < 64) cpp_dirs[cpp_ndirs++] = d; else free(d); }
+    if (cpp_nf < 256 && cpp_file_idx(found) < 0) { cpp_fpath[cpp_nf] = strdup(found);  cpp_fidx[cpp_nf++] = idx; }
+    if (cpp_once_has(found)) { free(text);  free(found);  return cpp_dup("\n", 1); }   /* `#pragma once` was read in it */
+    if (once) cpp_once_add(found);
     hbnf_text_from(hbnf_src_keep(found), hbnf_src_keep(strdup(text)));
+    /* the file is read as the main file is: trigraphs and `\`-newline taken out first (phases 1 and 2), the places kept for its lines */
+    if (cpp_needs_unsplice(text, strlen(text))) { char *proc = cpp_unsplice(text, strlen(text));  free(text);  text = proc; }
     return text;
+}
+static char *cpp_include(const char *s, size_t n) { return cpp_include_k(s, n, s, 0, 0); }
+/* `#embed "file" params` (C23): the bytes of the file as a list of numbers, the operand read once its macros are expanded.  Parameters: limit(n), gnu::offset(n),
+   prefix(tokens), suffix(tokens), if_empty(tokens) (and the `__name__` spellings): prefix and suffix go before and after the numbers when there are some, and
+   if_empty stands for them when there are none.  `__has_embed` asks the same without reading it all: 0 not found, 1 found, 2 found and empty. */
+static int cpp_eval_int(const char *s, size_t n, intmax_t *out);
+typedef struct { char *path; intmax_t limit, offset; char *prefix, *suffix, *if_empty; int ok; } cpp_embed_t;
+static void cpp_embed_free(cpp_embed_t *e) { free(e->path); free(e->prefix); free(e->suffix); free(e->if_empty); }
+static int cpp_embed_parse(const char *s, size_t n, const char *at, cpp_embed_t *e) {
+    char *t = cpp_trim(s, n);
+    char *q = t;
+    int quoted = *q == '"', idx;
+    char *close;
+    memset(e, 0, sizeof *e);
+    e->limit = -1;
+    if (*q != '"' && *q != '<') { free(t); return 0; }
+    close = strchr(q + 1, quoted ? '"' : '>');
+    if (!close) { free(t); return 0; }
+    { size_t m = (size_t)(close - q - 1); char *name = cpp_dup(q + 1, m);
+      if (cpp_ndirs == 0) cpp_dirs[cpp_ndirs++] = cpp_dirof(cpp_file);
+      e->path = cpp_find(name, quoted, 0, &idx);
+      free(name); }
+    q = close + 1;
+    for (;;) {
+        char *nm, *pe;
+        char word[64];
+        size_t wl = 0;
+        const char *args = NULL;
+        size_t al = 0;
+        while (*q == ' ' || *q == '\t') q++;
+        if (!*q) break;
+        nm = q;
+        while (isalnum((unsigned char)*q) || *q == '_' || *q == ':') q++;
+        if (q == nm) { free(t); return -1; }
+        wl = (size_t)(q - nm);
+        if (wl >= sizeof word) { free(t); return -1; }
+        memcpy(word, nm, wl);  word[wl] = 0;
+        while (*q == ' ' || *q == '\t') q++;
+        if (*q == '(') {
+            int d = 0;
+            pe = q;
+            do { if (*pe == '(') d++; else if (*pe == ')') d--; pe++; } while (*pe && d > 0);
+            if (d != 0) { free(t); return -1; }
+            args = q + 1;  al = (size_t)(pe - q - 2);
+            q = pe;
+        }
+        { char *w = word;  size_t k;
+          if (strncmp(w, "gnu::", 5) == 0) w += 5;
+          if (strncmp(w, "__gnu__::", 9) == 0) w += 9;
+          k = strlen(w);
+          if (k > 4 && w[0] == '_' && w[1] == '_' && w[k - 1] == '_' && w[k - 2] == '_') { w[k - 2] = 0; w += 2; }
+          if (strcmp(w, "limit") == 0 && args) { if (!cpp_eval_int(args, al, &e->limit)) { free(t); return -1; } }
+          else if (strcmp(w, "offset") == 0 && args) { if (!cpp_eval_int(args, al, &e->offset)) { free(t); return -1; } }
+          else if (strcmp(w, "prefix") == 0) e->prefix = cpp_trim(args ? args : "", al);
+          else if (strcmp(w, "suffix") == 0) e->suffix = cpp_trim(args ? args : "", al);
+          else if (strcmp(w, "if_empty") == 0) e->if_empty = cpp_trim(args ? args : "", al);
+          else { cpp_diag(at, "error", "unknown '#embed' parameter '%s'", word); free(t); return -1; }
+        }
+    }
+    free(t);
+    return 1;
+}
+static long cpp_embed_size(const cpp_embed_t *e, FILE *f) {   /* the bytes the parameters leave of the file */
+    long total;
+    fseek(f, 0, SEEK_END);  total = ftell(f);
+    total -= (long)e->offset;
+    if (total < 0) total = 0;
+    if (e->limit >= 0 && total > (long)e->limit) total = (long)e->limit;
+    return total;
+}
+typedef struct { char *s; size_t n, cap; } cpp_sbuf;
+static void cpp_sadds(cpp_sbuf *b, const char *t) {
+    size_t m = strlen(t);
+    if (b->n + m + 1 > b->cap) { b->cap = (b->n + m + 1) * 2;  b->s = (char *)realloc(b->s, b->cap); }
+    memcpy(b->s + b->n, t, m + 1);  b->n += m;
+}
+static char *cpp_embed(const char *s, size_t n) {
+    cpp_embed_t e;
+    int ok = cpp_embed_parse(s, n, s, &e);
+    FILE *f;
+    long size, i;
+    cpp_sbuf out = { 0, 0, 0 };
+    if (ok <= 0) { if (ok == 0) cpp_diag(s, "error", "'#embed' expects '\"FILENAME\"' or '<FILENAME>'"); cpp_embed_free(&e); return cpp_dup("\n", 1); }
+    if (!e.path || !(f = fopen(e.path, "rb"))) { cpp_diag(s, "fatal error", "%s: No such file or directory", e.path ? e.path : "file"); cpp_embed_free(&e); return cpp_dup("\n", 1); }
+    size = cpp_embed_size(&e, f);
+    if (size == 0) { if (e.if_empty) cpp_sadds(&out, e.if_empty); }
+    else {
+        unsigned char *buf = (unsigned char *)malloc((size_t)size);
+        fseek(f, (long)e.offset, SEEK_SET);
+        if (fread(buf, 1, (size_t)size, f) != (size_t)size) size = 0;
+        if (e.prefix) cpp_sadds(&out, e.prefix);
+        for (i = 0; i < size; i++) { char nb[8]; snprintf(nb, sizeof nb, i ? ",%u" : "%u", buf[i]); cpp_sadds(&out, nb); }
+        if (e.suffix) cpp_sadds(&out, e.suffix);
+        free(buf);
+    }
+    fclose(f);
+    cpp_embed_free(&e);
+    cpp_sadds(&out, "\n");
+    return out.s;
+}
+static char *cpp_has_embed(const char *s, size_t n) {
+    cpp_embed_t e;
+    int ok = cpp_embed_parse(s, n, s, &e);
+    FILE *f;
+    const char *r = "0";
+    if (ok > 0 && e.path && (f = fopen(e.path, "rb"))) { r = cpp_embed_size(&e, f) == 0 ? "2" : "1"; fclose(f); }
+    cpp_embed_free(&e);
+    return cpp_dup(r, 1);
+}
+/* what `#include` has when its operand was macros: the text after they are expanded, taken apart (a string, or `<` name `>` made of tokens: no blanks in it) */
+static char *cpp_include_operand(const char *s, size_t n, int next, int once) {
+    char *t = cpp_trim(s, n), *r;
+    size_t m = strlen(t), i, k = 0;
+    int ok = 0;
+    char *op = (char *)malloc(m + 3);
+    if (m >= 2 && t[0] == '"') { size_t e = 1; while (e < m && t[e] != '"') e++; if (e < m) { memcpy(op, t, e + 1); op[e + 1] = 0; ok = 1; } }
+    else if (m >= 2 && t[0] == '<') {
+        for (i = 0; i < m; i++) { if (t[i] == ' ' || t[i] == '\t') continue; op[k++] = t[i]; if (t[i] == '>') { ok = 1; break; } }
+        op[k] = 0;
+    }
+    if (!ok) { cpp_diag(s, "error", "'#include' expects '\"FILENAME\"' or '<FILENAME>'"); free(t); free(op); return cpp_dup("\n", 1); }
+    r = cpp_include_k(op, strlen(op), s, next, once);
+    free(t);  free(op);
+    return r;
+}
+static char *cpp_include_macro(const char *s, size_t n) { return cpp_include_operand(s, n, 0, 0); }
+static char *cpp_include_next_macro(const char *s, size_t n) { return cpp_include_operand(s, n, 1, 0); }
+static char *cpp_import_macro(const char *s, size_t n) { return cpp_include_operand(s, n, 0, 1); }
+static char *cpp_include_next(const char *s, size_t n) { return cpp_include_k(s, n, s, 1, 0); }
+static char *cpp_import(const char *s, size_t n) { return cpp_include_k(s, n, s, 0, 1); }
+/* `__has_include("x")`, `__has_include(<x>)` and `__has_include_next(...)`: 1 if the file is there, else 0 */
+static char *cpp_has_inc(const char *s, size_t n, int next) {
+    char name[4096];
+    char *found;
+    int quoted = n > 0 && s[0] == '"', idx;
+    if (n < 3 || n >= sizeof name) return cpp_dup("0", 1);
+    memcpy(name, s + 1, n - 2);  name[n - 2] = 0;
+    if (cpp_ndirs == 0) cpp_dirs[cpp_ndirs++] = cpp_dirof(cpp_file);
+    found = cpp_find(name, quoted && !next, next ? cpp_file_idx(cpp_file_of(s)) + 1 : 0, &idx);
+    free(found);
+    return cpp_dup(found ? "1" : "0", 1);
+}
+static char *cpp_has_include(const char *s, size_t n) { return cpp_has_inc(s, n, 0); }
+static char *cpp_has_include_next(const char *s, size_t n) { return cpp_has_inc(s, n, 1); }
+/* `__has_attribute(x)` and the others: what gcc answers for the name, from the tables gcc was asked for: 0 for a name it does not know.  A name is also
+   known with `__` around it (`__noreturn__`), and a scope `gnu::` or `__gnu__::` is the attribute gnu has (the tables of the C and C++ attributes list
+   gnu's with the scope, and the standard's without). */
+typedef struct { const char *name; long value; } cpp_gtab;
+static long cpp_gget(const void *tbl, size_t cnt, const char *name) {
+    const cpp_gtab *t = (const cpp_gtab *)tbl;
+    size_t lo = 0, hi = cnt;
+    while (lo < hi) { size_t mid = (lo + hi) / 2;  int c = strcmp(name, t[mid].name);  if (c == 0) return t[mid].value;  if (c < 0) hi = mid; else lo = mid + 1; }
+    return 0;
+}
+static size_t cpp_strip_us(const char *s, size_t n, char *out) {   /* __x__ is x */
+    if (n > 4 && s[0] == '_' && s[1] == '_' && s[n - 1] == '_' && s[n - 2] == '_') { memcpy(out, s + 2, n - 4);  out[n - 4] = 0;  return n - 4; }
+    memcpy(out, s, n);  out[n] = 0;  return n;
+}
+static char *cpp_has_feature(const char *s, size_t n, int which) {
+    char a[256], b[256], key[600];
+    const char *sc = NULL;
+    size_t i, an, bn = 0;
+    long v = 0;
+    char *r = (char *)malloc(24);
+    if (n >= sizeof a) { strcpy(r, "0"); return r; }
+    for (i = 0; i + 1 < n; i++) if (s[i] == ':' && s[i + 1] == ':') { sc = s + i; break; }
+    if (sc) {
+        char scope[64];
+        size_t sn = (size_t)(sc - s);
+        if (sn >= sizeof scope) { strcpy(r, "0"); return r; }
+        cpp_strip_us(s, sn, scope);
+        an = cpp_strip_us(sc + 2, n - sn - 2, b);  bn = an;
+        if (strcmp(scope, "gnu") == 0) snprintf(key, sizeof key, "gnu::%s", b); else key[0] = 0;
+        (void)bn;
+        if (key[0]) {
+            if (which == 0) v = cpp_gget(cpp_gnu_attr, sizeof cpp_gnu_attr / sizeof *cpp_gnu_attr, b);
+            else if (which == 2) v = cpp_gget(cpp_gnu_cattr, sizeof cpp_gnu_cattr / sizeof *cpp_gnu_cattr, key);
+            else if (which == 3) v = cpp_gget(cpp_gnu_cppattr, sizeof cpp_gnu_cppattr / sizeof *cpp_gnu_cppattr, key);
+        }
+    } else {
+        an = cpp_strip_us(s, n, a);
+        switch (which) {
+        case 0: v = cpp_gget(cpp_gnu_attr, sizeof cpp_gnu_attr / sizeof *cpp_gnu_attr, a); break;
+        case 1: v = cpp_gget(cpp_gnu_builtin, sizeof cpp_gnu_builtin / sizeof *cpp_gnu_builtin, a);
+                if (!v) { memcpy(a, s, n);  a[n] = 0;  v = cpp_gget(cpp_gnu_builtin, sizeof cpp_gnu_builtin / sizeof *cpp_gnu_builtin, a); } break;
+        case 2: v = cpp_gget(cpp_gnu_cattr, sizeof cpp_gnu_cattr / sizeof *cpp_gnu_cattr, a); break;
+        case 3: v = cpp_gget(cpp_gnu_cppattr, sizeof cpp_gnu_cppattr / sizeof *cpp_gnu_cppattr, a); break;
+        case 4: v = cpp_gget(cpp_gnu_feature, sizeof cpp_gnu_feature / sizeof *cpp_gnu_feature, a); break;
+        default: v = cpp_gget(cpp_gnu_ext, sizeof cpp_gnu_ext / sizeof *cpp_gnu_ext, a); break;
+        }
+        (void)an;
+    }
+    snprintf(r, 24, "%ld", v);
+    return r;
+}
+static char *cpp_has_attr(const char *s, size_t n) { return cpp_has_feature(s, n, 0); }
+static char *cpp_has_builtin(const char *s, size_t n) { return cpp_has_feature(s, n, 1); }
+static char *cpp_has_cattr(const char *s, size_t n) { return cpp_has_feature(s, n, 2); }
+static char *cpp_has_cppattr(const char *s, size_t n) { return cpp_has_feature(s, n, 3); }
+static char *cpp_has_feat(const char *s, size_t n) { return cpp_has_feature(s, n, 4); }
+static char *cpp_has_ext(const char *s, size_t n) { return cpp_has_feature(s, n, 5); }
+/* `__INCLUDE_LEVEL__`, `__BASE_FILE__`, `__FILE_NAME__`, `__TIMESTAMP__` */
+static size_t hbnf_inc_depth(const char *s);
+static char *cpp_quote(const char *v) {
+    size_t i, k = 0, m = strlen(v);
+    char *r = (char *)malloc(2 * m + 3);
+    r[k++] = '"';
+    for (i = 0; i < m; i++) { if (v[i] == '"' || v[i] == '\\') r[k++] = '\\'; r[k++] = v[i]; }
+    r[k++] = '"';  r[k] = 0;
+    return r;
+}
+static char *cpp_incl_level(const char *s, size_t n) { char *r = (char *)malloc(16); (void)n; snprintf(r, 16, "%lu", (unsigned long)hbnf_inc_depth(s)); return r; }
+static char *cpp_base_file(const char *s, size_t n) { (void)s; (void)n; return cpp_quote(cpp_file); }
+static char *cpp_file_name(const char *s, size_t n) { const char *f = cpp_file_of(s), *sl = strrchr(f, '/'); (void)n; return cpp_quote(sl ? sl + 1 : f); }
+static char *cpp_timestamp(const char *s, size_t n) {
+    struct stat st;
+    const char *f = cpp_file_of(s);
+    char buf[64];
+    (void)n;
+    if (stat(f, &st) != 0) return cpp_dup("\"??? ??? ?? ??:??:?? ????\"", 26);
+    strftime(buf, sizeof buf, "%a %b %e %H:%M:%S %Y", localtime(&st.st_mtime));
+    return cpp_quote(buf);
 }
 /* `(a, f(b, c), "x,y")` -> `(\005a\006,\005 f(b, c)\006,\005 "x,y"\006)`: each argument as the standard splits them (at the commas outside brackets,
    strings, characters and comments), bracketed, so that once its macros are expanded (which may add commas) it can still be told from the next */
+static void hbnf_cp_note(const char *src, size_t n, size_t out_in_result);   /* the runtime of the rewrites: this part of the result is that part of the text */
 static char *cpp_wrap(const char *s, size_t n) {
     char *r = (char *)malloc(3 * n + 16), *o = r;
     size_t i;
@@ -280,17 +879,18 @@ static char *cpp_wrap(const char *s, size_t n) {
     *o++ = '(';  *o++ = '\005';
     for (i = 1; i + 1 < n; i++) {
         char c = s[i];
-        if (q) { *o++ = c; if (c == '\\' && i + 2 < n) *o++ = s[++i]; else if (c == q) q = 0; continue; }
+        if (q) { hbnf_cp_note(s + i, 1, (size_t)(o - r));  *o++ = c; if (c == '\\' && i + 2 < n) { hbnf_cp_note(s + i + 1, 1, (size_t)(o - r));  *o++ = s[++i]; } else if (c == q) q = 0; continue; }
         if (c == '/' && i + 2 < n && s[i + 1] == '*') {
-            *o++ = c; *o++ = s[++i];
-            while (i + 2 < n && !(s[i] == '*' && s[i + 1] == '/')) *o++ = s[i++];
-            if (i + 2 < n) { *o++ = s[i++]; *o++ = s[i]; }
+            hbnf_cp_note(s + i, 1, (size_t)(o - r));  *o++ = c;  i++;  hbnf_cp_note(s + i, 1, (size_t)(o - r));  *o++ = s[i];
+            while (i + 2 < n && !(s[i] == '*' && s[i + 1] == '/')) { hbnf_cp_note(s + i, 1, (size_t)(o - r));  *o++ = s[i++]; }
+            if (i + 2 < n) { hbnf_cp_note(s + i, 1, (size_t)(o - r));  *o++ = s[i++];  hbnf_cp_note(s + i, 1, (size_t)(o - r));  *o++ = s[i]; }
             continue;
         }
         if (c == '"' || c == '\'') q = c;
         else if (c == '(') depth++;
         else if (c == ')') depth--;
         if (c == ',' && depth == 0) { *o++ = '\006'; *o++ = ','; *o++ = '\005'; continue; }
+        hbnf_cp_note(s + i, 1, (size_t)(o - r));
         *o++ = c;
     }
     *o++ = '\006';  *o++ = ')';  *o = 0;
@@ -302,16 +902,65 @@ context defs
 context objs
 context funs
 
-cpp  = *item
-item = directive | comment | line-comment | string-lit | char-lit | pp-number | line-use | file-use | fun-use | obj-use | name | ~"#"
+; (a directive nothing knows, and an `#else`, `#elif` or `#endif` with no group, are said at the top level only: inside a group they would be taken for its end)
+cpp  = [ predefs ] ( unsplice | *( item | bad-line | stray-line ) )
+bad-line   = bol *W bad-directive
+stray-line = bol *W stray-directive
+; before anything else is read, the macros every compiler has (the epilogue puts them in the contexts); only once in a parse
+; phases 1 and 2, once, over the whole text: the splices (and trigraphs) are taken out, and what is read after is the text that remains
+unsplice = *OCTET as T %where { return cpp_needs_unsplice(text, len); }                                           => cpp_unsplice(T)
+predefs = !"\000" as E %where { return hbnf_rr_count() == 0; }                                                     => cpp_predef(E)
+item = !group-end ( line-directive | comment | unterm-comment | line-comment | string-lit | char-lit | pp-number | special-use | pragma-op | fun-use | obj-use | name | other )
+; a character: a `#` after it in the line is part of it (a `#` in the middle of a line is a token, and one that begins a line is a directive: nothing here takes it)
+other = ~( "#" | CR | LF ) *"#" | CR | LF
+; a comment that has no end takes the rest of the text, and is said (the line is where it begins)
+unterm-comment = "/*" rest-all %bind { cpp_say(text, "unterminated comment"); }
+rest-all = %scan{ return (int)(len - pos); }
+; a directive is a `#` that begins a line in the text the user wrote, after blanks and comments (C11 6.10 p2: judged before macros are expanded, so
+; `EMPTY # define X` is none, nor is what a macro makes); anywhere else `#` is a token like any other.  `bol` asks the text the user wrote.
+; the end of a group of a conditional is a line that begins with `#else`, `#elif` or `#endif`: what a group holds stops before it
+group-end = bol *W HASH *W ( "else" | "elif" | "endif" ) !name-char
+line-directive = bol *W directive
 
-; the two that are not defined by a `#define`
-line-use = "__LINE__" !name-char as L                                                                    => cpp_line(L)
-file-use = "__FILE__" !name-char as F                                                                    => cpp_file_lit(F)
+; the macros that are not defined by a `#define`: their value is made where they stand
+kw-line = "__LINE__" !name-char
+kw-file = "__FILE__" !name-char
+kw-counter = "__COUNTER__" !name-char
+kw-date = "__DATE__" !name-char
+kw-time = "__TIME__" !name-char
+kw-incl = "__INCLUDE_LEVEL__" !name-char
+kw-base = "__BASE_FILE__" !name-char
+kw-fname = "__FILE_NAME__" !name-char
+kw-stamp = "__TIMESTAMP__" !name-char
+special-use = line-use | file-use | counter-use | date-use | time-use | incl-use | base-use | fname-use | stamp-use
+line-use    = kw-line as L                                                                 => cpp_line(L)
+file-use    = kw-file as F                                                                 => cpp_file_lit(F)
+counter-use = kw-counter as C                                                              => cpp_counter(C)
+date-use    = kw-date as D                                                                 => cpp_date(D)
+time-use    = kw-time as T                                                                 => cpp_time(T)
+incl-use    = kw-incl as T                                                        => cpp_incl_level(T)
+base-use    = kw-base as T                                                            => cpp_base_file(T)
+fname-use   = kw-fname as T                                                            => cpp_file_name(T)
+stamp-use   = kw-stamp as T                                                            => cpp_timestamp(T)
+; the feature tests of `#if`: answered from what gcc answers (tables made by tools/gen_gcc_tables.py)
+has-use      = has-include-next | has-include | has-embed | has-attr | has-builtin | has-cattr | has-cppattr | has-feat | has-ext
+has-include  = "__has_include" !name-char *W "(" *W include-name as F *W ")"                                   => cpp_has_include(F)
+has-include-next = "__has_include_next" !name-char *W "(" *W include-name as F *W ")"                          => cpp_has_include_next(F)
+has-attr     = "__has_attribute" !name-char *W "(" *W attr-ref as A *W ")"                                     => cpp_has_attr(A)
+has-builtin  = "__has_builtin" !name-char *W "(" *W name as A *W ")"                                           => cpp_has_builtin(A)
+has-cattr    = "__has_c_attribute" !name-char *W "(" *W attr-ref as A *W ")"                                   => cpp_has_cattr(A)
+has-cppattr  = "__has_cpp_attribute" !name-char *W "(" *W attr-ref as A *W ")"                                 => cpp_has_cppattr(A)
+has-feat     = "__has_feature" !name-char *W "(" *W name as A *W ")"                                           => cpp_has_feat(A)
+has-ext      = "__has_extension" !name-char *W "(" *W name as A *W ")"                                         => cpp_has_ext(A)
+has-embed    = "__has_embed" !name-char *W "(" embed-args as A ")"                                             => cpp_has_embed(A)
+embed-args   = *( "(" embed-args ")" | comment | line-comment | string-lit | char-lit | pp-number | special-use | fun-use | obj-use | name | ~( "(" | ")" ) )
+attr-ref     = name [ *W "::" *W name ]
+; `_Pragma("x")` is a `#pragma x` line
+pragma-op   = "_Pragma" !name-char *HB "(" *HB string-lit as S *HB ")"                                   => cpp_pragma(S)
 
 ; a macro in use: its body, and for a function-like one with the arguments in the parentheses after it
 obj-use = name in objs not in hidden as N                                                              => N.body with N.params = N hiding N
-fun-use = marker-call | fun-call
+fun-use = marker-call | fun-call | unterm-call
 ; a call is made in two steps.  The standard expands an argument before it goes into the body, except where the body has `#` or `##`
 ; next to the parameter, which take the argument as it was written; so the call is first rewritten to a marker form that carries the
 ; arguments as written (`raw-args`, which nothing in it expands) and, after them, the same arguments to be expanded in place:
@@ -321,65 +970,113 @@ fun-use = marker-call | fun-call
 ; replaced; hbnf_subst takes the two argument lists apart at \003.
 fun-call    = name in funs not in hidden as N *( HB | newline ) raw-args as R                         => "\001" N "\002" R "\003" cpp_wrap(R) "\004"
 marker-call = "\001" name as N "\002" raw-and-args as A "\004"                                           => N.body with N.params = A hiding N
+unterm-call = name in funs not in hidden as N *( HB | newline ) "(" %bind { cpp_unterm_call(text); }
 raw-and-args = raw-args "\003" args
 raw-args = "(" *raw-part ")"
 raw-part = raw-args | comment | line-comment | string-lit | char-lit | ~( "(" | ")" )
 args     = "(" *arg-part ")"
-arg-part = args | comment | line-comment | string-lit | char-lit | pp-number | line-use | file-use | fun-use | obj-use | name | ~( "(" | ")" )
+arg-part = args | comment | line-comment | string-lit | char-lit | pp-number | special-use | fun-use | obj-use | name | ~( "(" | ")" )
 
 ; the directives
-directive = define-fun | define-obj | undef | cond | include-dir | include-mac | other-directive
-define-obj = "#" *HB "define" 1*HB name as N !"(" empty as E body as B line-end                         => defs += N, objs += N, N.params = E, N.body = B
-define-fun = "#" *HB "define" 1*HB name as N "(" *~( ")" | CR | LF ) as P ")" body as B line-end      => defs += N, funs += N, N.params = P, N.body = B
-undef      = "#" *HB "undef" 1*HB name as N line-end                                                        => defs -= N, objs -= N, funs -= N
+directive = define-check | define-defined | define-fun | define-obj | define-noname | define-badname | undef | undef-noname | cond | include-dir | include-mac | pragma-once | assert-dir | unassert-dir | embed-dir | line-dir
+          | error-dir | warning-dir | other-directive | cond-open
+define-obj = HASH *W "define" 1*W name as N !"(" empty as E body as B line-end                         => defs += N, objs += N, N.params = E, N.body = B
+define-fun = HASH *W "define" 1*W name as N "(" *~( ")" | CR | LF ) as P ")" body as B line-end      => defs += N, funs += N, N.params = P, N.body = B
+undef      = HASH *W "undef" 1*W name as N line-end                                                        => defs -= N, objs -= N, funs -= N
 ; `#include`: the name is `"x"` or `<x>`, or macros that make one of those (read, expanded, and the line read again)
-include-dir  = "#" *HB "include" !name-char *HB include-name as F rest-of-line                                  => cpp_include(F)
+include-dir  = HASH *W "include" !name-char *W include-name as F rest-of-line                                   => cpp_include(F)
+             | HASH *W "include_next" !name-char *W include-name as F rest-of-line                              => cpp_include_next(F)
+             | HASH *W "import" !name-char *W include-name as F rest-of-line                                    => cpp_import(F)
 include-name = "\"" *~( "\"" | CR | LF ) "\"" | "<" *~( ">" | CR | LF ) ">"
-include-mac  = "#" *HB "include" 1*HB mac-text as E line-end                                                  => "#include " E "\n"
-mac-text     = ( fun-use | obj-use ) expr-text
+include-mac  = HASH *W "include" !name-char inc-operand as E ( newline | !OCTET )                                          => cpp_include_macro(E)
+             | HASH *W "include_next" !name-char inc-operand as E ( newline | !OCTET )                                   => cpp_include_next_macro(E)
+             | HASH *W "import" !name-char inc-operand as E ( newline | !OCTET )                                         => cpp_import_macro(E)
+; what follows `#include` when it is not a name in quotes or angle brackets: read as the operand of `#if` is, so that its macros are expanded where they stand
+; (the text of what is left is a name or a `<`...`>` and the native function takes it apart); nothing, or what is no name, is said
+inc-operand  = *( comment | line-comment | string-lit | char-lit | pp-number | special-use | fun-use | obj-use | name | other-nl )
+other-nl     = ~( CR | LF )
+
+; `#pragma once`, and `#line N` or `#line N "file"` (the lines are numbered from N, and the file is called that, from the next line on)
+pragma-once = HASH *W "pragma" 1*W "once" !name-char as P rest-of-line                                         => cpp_pragma_once(P)
+line-dir    = HASH *W "line" !name-char inc-operand as E ( newline | !OCTET )                                      => cpp_line_dir(E)
+embed-dir   = HASH *W "embed" !name-char inc-operand as E ( newline | !OCTET )                                      => cpp_embed(E)
+assert-dir  = HASH *W "assert" !name-char *HB line-text as E ( newline | !OCTET )                                  => cpp_assert_dir(E)
+unassert-dir = HASH *W "unassert" !name-char *HB line-text as E ( newline | !OCTET )                              => cpp_unassert_dir(E)
+; the directives a compiler refuses or warns about: each says so (cpp_say ...), and what it says is no more than that: the line stays, and the output has no line of directive but #pragma, #ident and #sccs
+define-check = ( HASH *W "define" rest-of-line ) %where { cpp_define_check(text, len); return 0; }
+define-defined = HASH *W "define" 1*W "defined" !name-char %bind { cpp_say(text, "'defined' cannot be used as a macro name"); } rest-of-line
+define-noname  = HASH *W "define" *HB ( newline | !OCTET ) %bind { cpp_say(text, "no macro name given in '#define' directive"); }
+define-badname = HASH *W "define" 1*W !( ALPHA | "_" ) %bind { cpp_say(text, "macro names must be identifiers"); } rest-of-line
+undef-noname   = HASH *W "undef" *HB ( newline | !OCTET ) %bind { cpp_say(text, "no macro name given in '#undef' directive"); }
+error-dir      = HASH *W "error" !name-char *HB err-text %bind { cpp_say_text(text, len, "error", "#"); } ( newline | !OCTET )
+warning-dir    = HASH *W "warning" !name-char *HB err-text %bind { cpp_say_text(text, len, "warning", "#"); } ( newline | !OCTET )
+err-text       = [ line-text ]
+bad-directive  = HASH *W !end-word name %bind { cpp_say_text(text, len, "error", "invalid preprocessing directive #"); } rest-of-line
+end-word       = ( "else" | "elif" | "endif" ) !name-char
+stray-directive = HASH *W ( "else" | "elif" | "endif" ) %bind { cpp_say_stray(text, len); } !name-char rest-of-line
+cond-open      = HASH *W ( "ifdef" | "ifndef" | "if" ) %bind { cpp_say(text, "unterminated #if"); } !name-char rest-of-line
 
 ; a directive that is not one of those and is not the end of a group (`#else`, `#elif`, `#endif`): the text of its line is left as it stands
-other-directive = "#" *HB ( directive-word rest-of-line | line-end )
+other-directive = HASH *W ( directive-word rest-of-line | line-end )
 directive-word  = ( "include_next" | "include" | "pragma" | "error" | "warning" | "line" | "ident" | "assert" | "unassert" | "import" ) !name-char | DIGIT
-rest-of-line    = *( "\\" newline | ~( CR | LF ) ) line-end
-body       = *( "\\" newline | ~( CR | LF ) )
+rest-of-line    = [ line-text ] ( newline | !OCTET )
+body       = [ line-text ]
+; the rest of a directive's line: up to a line end that is not inside a comment, a string or a character constant (a native scanner: the rules of
+; characters take the longest match, and `"/*"` must not begin a comment)
+line-text  = %scan{
+    size_t i = pos;
+    while (i < len && s[i] != '\n' && s[i] != '\r') {
+        if (s[i] == '"' || s[i] == '\'') {
+            size_t j = i + 1;
+            while (j < len && s[j] != s[i] && s[j] != '\n' && s[j] != '\r') { if (s[j] == '\\' && j + 1 < len && s[j + 1] != '\n') j++; j++; }
+            if (j < len && s[j] == s[i]) i = j + 1; else i++;     /* a quote that closes nowhere is a character like another */
+        } else if (s[i] == '/' && i + 1 < len && s[i + 1] == '*') {
+            size_t j = i + 2;
+            while (j + 1 < len && !(s[j] == '*' && s[j + 1] == '/')) j++;
+            i = j + 1 < len ? j + 2 : len;
+        } else if (s[i] == '\\' && i + 1 < len && (s[i + 1] == '\n' || s[i + 1] == '\r')) {
+            i += 2;
+        } else i++;
+    }
+    return (int)(i - pos);
+}
 empty      = *"\001"
 
 ; a conditional group is replaced by the branch that is taken
 cond = cond-true | cond-false | cond-expr
-cond-true  = "#" *HB true-guard line-end *item as A [ "#" *HB "else" line-end skip-group ] "#" *HB "endif" line-end    => A
-cond-false = "#" *HB false-guard line-end skip-group *HB "#" *HB "else" line-end *item as A *HB "#" *HB "endif" line-end       => A
-           | "#" *HB false-guard line-end skip-group *HB "#" *HB "endif" line-end                                          => ""
-true-guard  = "ifdef" 1*HB name in defs | "ifndef" 1*HB name not in defs | "if" 1*HB "1" !name-char
-            | "if" 1*HB "defined" *HB ( "(" *HB name in defs *HB ")" | name in defs )
-            | "if" 1*HB "!" *HB "defined" *HB ( "(" *HB name not in defs *HB ")" | name not in defs )
-false-guard = "ifdef" 1*HB name not in defs | "ifndef" 1*HB name in defs | "if" 1*HB "0" !name-char
-            | "if" 1*HB "defined" *HB ( "(" *HB name not in defs *HB ")" | name not in defs )
-            | "if" 1*HB "!" *HB "defined" *HB ( "(" *HB name in defs *HB ")" | name in defs )
+cond-true  = HASH *W true-guard line-end *item as A [ *W HASH *W "else" line-end skip-group ] *W HASH *W "endif" line-end    => A
+cond-false = HASH *W false-guard line-end skip-group *W HASH *W "else" line-end *item as A *W HASH *W "endif" line-end       => A
+           | HASH *W false-guard line-end skip-group *W HASH *W "endif" line-end                                          => ""
+true-guard  = "ifdef" 1*W name in defs | "ifndef" 1*W name not in defs | "if" 1*W "1" !name-char
+            | "if" 1*W "defined" *HB ( "(" *HB name in defs *HB ")" | name in defs )
+            | "if" 1*W "!" *HB "defined" *HB ( "(" *HB name not in defs *HB ")" | name not in defs )
+false-guard = "ifdef" 1*W name not in defs | "ifndef" 1*W name in defs | "if" 1*W "0" !name-char
+            | "if" 1*W "defined" *HB ( "(" *HB name not in defs *HB ")" | name not in defs )
+            | "if" 1*W "!" *HB "defined" *HB ( "(" *HB name in defs *HB ")" | name in defs )
 ; `#if` and `#elif` with an expression.  The expression is read as text that is expanded as it goes (a macro is a use like any other, and
 ; `defined X` and `defined(X)` are made 1 or 0 where they stand), and cpp_pick evaluates what is left; the branches are read raw, so what a
 ; branch that is not taken holds (a #define, a stray quote) has no effect, and the branch that is taken is read again as text.  An `#elif`
 ; is an `#else` and an `#if` (the groups after it, to the `#endif`, are read as one, `chain`).
 cond-expr = cond-elif | cond-elif-def | cond-else | cond-plain
-cond-plain = "#" *HB "if" !name-char expr-text as E line-end skip-group as A *HB "#" *HB "endif" line-end                                               => cpp_pick1(E, A)
-cond-else  = "#" *HB "if" !name-char expr-text as E line-end skip-group as A *HB "#" *HB "else" line-end skip-group as B *HB "#" *HB "endif" line-end     => cpp_pick(E, A, B)
-cond-elif  = "#" *HB "if" !name-char expr-text as E line-end skip-group as A *HB "#" *HB "elif" !name-char expr-text as F line-end chain as R *HB "#" *HB "endif" line-end
+cond-plain = HASH *W "if" !name-char expr-text as E line-end skip-group as A *W HASH *W "endif" line-end                                               => cpp_pick1(E, A)
+cond-else  = HASH *W "if" !name-char expr-text as E line-end skip-group as A *W HASH *W "else" line-end skip-group as B *W HASH *W "endif" line-end     => cpp_pick(E, A, B)
+cond-elif  = HASH *W "if" !name-char expr-text as E line-end skip-group as A *W HASH *W "elif" !name-char expr-text as F line-end chain as R *W HASH *W "endif" line-end
                 => "#if " E "\n" A "#else\n#if " F "\n" R "#endif\n#endif\n"
-cond-elif-def = "#" *HB ( "ifdef" 1*HB name as N line-end skip-group as A *HB "#" *HB "elif" !name-char expr-text as F line-end chain as R *HB "#" *HB "endif" line-end
+cond-elif-def = HASH *W ( "ifdef" 1*W name as N line-end skip-group as A *W HASH *W "elif" !name-char expr-text as F line-end chain as R *W HASH *W "endif" line-end
                 => "#if defined(" N ")\n" A "#else\n#if " F "\n" R "#endif\n#endif\n" )
-              | "#" *HB "ifndef" 1*HB name as N line-end skip-group as A *HB "#" *HB "elif" !name-char expr-text as F line-end chain as R *HB "#" *HB "endif" line-end
+              | HASH *W "ifndef" 1*W name as N line-end skip-group as A *W HASH *W "elif" !name-char expr-text as F line-end chain as R *W HASH *W "endif" line-end
                 => "#if !defined(" N ")\n" A "#else\n#if " F "\n" R "#endif\n#endif\n"
-chain      = skip-group *( *HB "#" *HB ( "elif" | "else" ) !name-char rest-of-line skip-group )
-expr-text  = *( defined-use | comment | line-comment | string-lit | char-lit | pp-number | line-use | file-use | fun-use | obj-use | name | "\\" newline | ~( CR | LF ) )
+chain      = skip-group *( *W HASH *W ( "elif" | "else" ) !name-char rest-of-line skip-group )
+expr-text  = *( defined-use | comment | line-comment | string-lit | char-lit | pp-number | special-use | has-use | fun-use | obj-use | name | "\\" newline | ~( CR | LF ) )
 defined-use = "defined" !name-char *HB "(" *HB name in defs *HB ")"       => "1"
             | "defined" !name-char *HB "(" *HB name not in defs *HB ")"   => "0"
-            | "defined" !name-char 1*HB name in defs                       => "1"
-            | "defined" !name-char 1*HB name not in defs                   => "0"
+            | "defined" !name-char 1*W name in defs                       => "1"
+            | "defined" !name-char 1*W name not in defs                   => "0"
 
 ; the lines of a branch that is not taken, with the groups inside it, up to its #else or #endif
 skip-group  = *( skip-nested | skip-line )
-skip-nested = *HB "#" *HB ( "ifndef" | "ifdef" | "if" ) !name-char rest-of-line chain *HB "#" *HB "endif" !name-char rest-of-line
-skip-line   = *HB newline | *HB ~( "#" | CR | LF | " " | HTAB ) rest-of-line | *HB "#" *HB ( directive-word rest-of-line | "define" !name-char rest-of-line | "undef" !name-char rest-of-line | line-end )
+skip-nested = *W HASH *W ( "ifndef" | "ifdef" | "if" ) !name-char rest-of-line chain *W HASH *W "endif" !name-char rest-of-line
+skip-line   = *HB newline | *HB !"%:" ~( "#" | CR | LF | " " | HTAB ) rest-of-line | *W HASH *W ( directive-word rest-of-line | "define" !name-char rest-of-line | "undef" !name-char rest-of-line | line-end )
 
 ; the tokens
 comment      = "/*" *( ~"*" | 1*"*" ~( "*" | "/" ) ) 1*"*" "/"
@@ -390,5 +1087,321 @@ pp-number    = ( DIGIT | "." DIGIT ) *( ( "e" | "E" | "p" | "P" ) ( "+" | "-" ) 
 name         = ( ALPHA | "_" ) *name-char
 name-char    = ALNUM | "_"
 HB           = " " | HTAB
+W            = HB | comment
+HASH         = "%:" | "#"
 newline      = CR LF | LF | CR
-line-end     = *HB ( newline | !OCTET )
+line-end     = *W [ line-comment ] ( newline | !OCTET )
+{
+/* the macros every compiler has: __STDC__ and the like are macros with a body; the ones made where they stand are only known (`defined`, `#ifdef`);
+   and what a parse keeps in native state starts again */
+/* a macro put in the contexts: object-like when params is NULL */
+static void cpp_seed(const char *name, size_t nl, const char *params, size_t pl, const char *body, size_t bl) {
+    hbnf_ctx_add(CTX_defs, name, nl);
+    if (params) { hbnf_ctx_add(CTX_funs, name, nl);  hbnf_ctx_del(CTX_objs, name, nl); }
+    else { hbnf_ctx_add(CTX_objs, name, nl);  hbnf_ctx_del(CTX_funs, name, nl); }
+    hbnf_fact_put(CTX_body, name, nl, body, bl);
+    hbnf_fact_put(CTX_params, name, nl, params ? params : "", params ? pl : 0);
+}
+/* -D and -U of a command line, kept in the order given and put in the contexts after gcc's own macros: cpp_command_define("NAME"), ("NAME=value"),
+   ("F(a, b)=body") and cpp_command_undef("NAME") */
+static char *cpp_cmd[128];  static int cpp_ncmd;
+void cpp_command_define(const char *spec) { if (cpp_ncmd < 128) { char *s = (char *)malloc(strlen(spec) + 2);  s[0] = 'D';  strcpy(s + 1, spec);  cpp_cmd[cpp_ncmd++] = s; } }
+void cpp_command_undef(const char *name) { if (cpp_ncmd < 128) { char *s = (char *)malloc(strlen(name) + 2);  s[0] = 'U';  strcpy(s + 1, name);  cpp_cmd[cpp_ncmd++] = s; } }
+int cpp_undef = 0;   /* as -undef: gcc's own predefined macros (__GNUC__, __x86_64__, __INT_MAX__ ...) are not defined; the standard's are */
+static char *cpp_predef(const char *s, size_t n) {
+    static const char *known[] = { "__LINE__", "__FILE__", "__COUNTER__", "__DATE__", "__TIME__", "__INCLUDE_LEVEL__", "__BASE_FILE__", "__FILE_NAME__",
+                                   "__TIMESTAMP__", "__has_include", "__has_include_next", "__has_attribute", "__has_builtin", "__has_c_attribute",
+                                   "__has_cpp_attribute", "__has_feature", "__has_extension", "__has_embed" };
+    size_t i;
+    int k;
+    (void)s; (void)n;
+    /* gcc's macros, with the values gcc gives them (for the standard it defaults to: gnu17 in gcc 14, gnu23 from gcc 15); with -undef the ones gcc keeps (the standard's) */
+    { int sd = cpp_std >= 0 ? cpp_std : cpp_gnu_default_std;
+      cpp_c23 = sd == 4 || sd == 5 || sd == 10 || sd == 11;                                 /* c23, c2y, gnu23, gnu2y: `true` and `false` are 1 and 0 in `#if` */
+      if (cpp_std >= 0 && sd <= 3) cpp_trigraphs = 1; }                                /* -std=c89 to c17 read trigraphs; gnuNN and C23 (which removed them) do not */
+    for (i = 0; i < sizeof cpp_gnu_pre / sizeof *cpp_gnu_pre; i++) {
+        const char *nm = cpp_gnu_pre[i].name;
+        { int sd = cpp_std >= 0 ? cpp_std : cpp_gnu_default_std;  unsigned bit = 1u << sd;
+          if (!((cpp_undef ? cpp_gnu_pre[i].umask : cpp_gnu_pre[i].mask) & bit)) continue; }
+        cpp_seed(nm, strlen(nm), cpp_gnu_pre[i].params, cpp_gnu_pre[i].params ? strlen(cpp_gnu_pre[i].params) : 0, cpp_gnu_pre[i].body, strlen(cpp_gnu_pre[i].body));
+    }
+    for (i = 0; i < sizeof known / sizeof *known; i++) hbnf_ctx_add(CTX_defs, known[i], strlen(known[i]));
+    for (k = 0; k < cpp_ncmd; k++) {
+        const char *spec = cpp_cmd[k] + 1;
+        if (cpp_cmd[k][0] == 'U') {
+            char *nm = hbnf_src_keep(strdup(spec));
+            hbnf_ctx_del(CTX_defs, nm, strlen(nm));  hbnf_ctx_del(CTX_objs, nm, strlen(nm));  hbnf_ctx_del(CTX_funs, nm, strlen(nm));
+        } else {
+            const char *eq = strchr(spec, '='), *lp = strchr(spec, '(');
+            size_t nl;
+            if (lp && (!eq || lp < eq)) {                                    /* F(a, b)=body */
+                const char *rp = strchr(lp, ')');
+                char *nm, *pr, *bd;
+                if (!rp) continue;
+                nl = (size_t)(lp - spec);
+                nm = hbnf_src_keep(cpp_dup(spec, nl));  pr = hbnf_src_keep(cpp_dup(lp + 1, (size_t)(rp - lp - 1)));
+                bd = hbnf_src_keep(strdup(eq ? eq + 1 : "1"));
+                cpp_seed(nm, nl, pr, strlen(pr), bd, strlen(bd));
+            } else {                                                          /* NAME, NAME=value */
+                char *nm, *bd;
+                nl = eq ? (size_t)(eq - spec) : strlen(spec);
+                nm = hbnf_src_keep(cpp_dup(spec, nl));  bd = hbnf_src_keep(strdup(eq ? eq + 1 : "1"));
+                cpp_seed(nm, nl, NULL, 0, bd, strlen(bd));
+            }
+        }
+    }
+    cpp_ctr = 0;  cpp_timeset = 0;  cpp_linefile = NULL;
+    cpp_errors = cpp_warnings = 0;
+    { int q; for (q = 0; q < cpp_nas; q++) { free(cpp_as_pred[q]); free(cpp_as_ans[q]); } cpp_nas = 0; }
+    for (i = 0; i < (size_t)cpp_nseen_diag; i++) free(cpp_seen_diag[i]);
+    cpp_nseen_diag = 0;
+    hbnf_arity_hook = cpp_arity;
+    hbnf_paste_hook = cpp_paste_bad;
+    { int q; for (q = 0; q < cpp_ndef; q++) free(cpp_def_name[q]); cpp_ndef = 0; }
+    for (i = 0; i < (size_t)cpp_nonce; i++) free(cpp_once[i]);
+    cpp_nonce = 0;
+    for (i = 0; i < (size_t)cpp_ndirs; i++) free(cpp_dirs[i]);
+    cpp_ndirs = 0;
+    for (i = 0; i < (size_t)cpp_nf; i++) free(cpp_fpath[i]);
+    cpp_nf = 0;
+    /* as gcc does, `#include <stdc-predef.h>` before the file, unless -nostdinc: its macros (glibc's: __STDC_IEC_559__ ...) are there for every file */
+    if (!cpp_nostdinc) {
+        int idx;
+        char *found = cpp_find("stdc-predef.h", 0, 0, &idx);
+        char *text = found ? cpp_slurp(found) : NULL;
+        if (text) {
+            hbnf_text_from(hbnf_src_keep(found), hbnf_src_keep(strdup(text)));
+            if (cpp_needs_unsplice(text, strlen(text))) { char *proc = cpp_unsplice(text, strlen(text));  free(text);  text = proc; }
+            return text;
+        }
+        free(found);
+    }
+    return cpp_dup("", 0);
+}
+/* The text a parse leaves is the result, with the `#define` and `#undef` lines it read still in it (a rewrite cannot both set a fact and take its own text
+   away).  cpp_output makes the text a compiler's -E gives: those lines, the null directive `#` and linemarkers are taken out, whole, as the standard
+   reads them (blanks and comments before the `#` and between the `#` and its name are white space, a comment that runs over lines does not end the
+   directive, and a string or character constant is skipped as one token).  Only `#pragma`, `#ident` and `#sccs` stay.  The
+   result is malloc'd. */
+char *cpp_output(const char *s, size_t n) {
+    char *r = (char *)malloc(n + 1);
+    size_t i = 0, k = 0;
+    int bol = 1;
+    while (i < n) {
+        if (bol) {
+            size_t j = i, c0 = i;
+            /* blanks and comments: white space before the `#` */
+            for (;;) {
+                if (j < n && (s[j] == ' ' || s[j] == '\t')) j++;
+                else if (j + 1 < n && s[j] == '/' && s[j + 1] == '*') { j += 2; while (j + 1 < n && !(s[j] == '*' && s[j + 1] == '/')) j++; j = j + 2 <= n ? j + 2 : n; }
+                else break;
+            }
+            if (j < n && (s[j] == '#' || (s[j] == '%' && j + 1 < n && s[j + 1] == ':'))) {
+                size_t d = j + (s[j] == '#' ? 1 : 2);
+                int drop;
+                for (;;) {
+                    if (d < n && (s[d] == ' ' || s[d] == '\t')) d++;
+                    else if (d + 1 < n && s[d] == '/' && s[d + 1] == '*') { d += 2; while (d + 1 < n && !(s[d] == '*' && s[d + 1] == '/')) d++; d = d + 2 <= n ? d + 2 : n; }
+                    else break;
+                }
+                {   /* a line of directive that is still there is one the output has no more of: the ones that stay are what a compiler is given (#pragma, #ident, #sccs) */
+                    size_t e = d;
+                    while (e < n && (isalnum((unsigned char)s[e]) || s[e] == '_')) e++;
+                    drop = !((e - d == 6 && memcmp(s + d, "pragma", 6) == 0) || (e - d == 5 && memcmp(s + d, "ident", 5) == 0) || (e - d == 4 && memcmp(s + d, "sccs", 4) == 0));
+                }
+                if (drop) {
+                    /* to the end of the directive: its line, over comments and strings */
+                    while (d < n && s[d] != '\n' && s[d] != '\r') {
+                        if (s[d] == '"' || s[d] == '\'') { char q = s[d++]; while (d < n && s[d] != q && s[d] != '\n') { if (s[d] == '\\' && d + 1 < n) d++; d++; } if (d < n && s[d] == q) d++; }
+                        else if (d + 1 < n && s[d] == '/' && s[d + 1] == '*') { d += 2; while (d + 1 < n && !(s[d] == '*' && s[d + 1] == '/')) d++; d = d + 2 <= n ? d + 2 : n; }
+                        else if (d + 1 < n && s[d] == '/' && s[d + 1] == '/') { while (d < n && s[d] != '\n' && s[d] != '\r') d++; }
+                        else d++;
+                    }
+                    if (d < n && s[d] == '\r' && d + 1 < n && s[d + 1] == '\n') d++;
+                    if (d < n) d++;
+                    i = d;
+                    continue;                 /* the next line begins a line, too */
+                }
+            }
+            /* not a directive to take out: the white space is text */
+            (void)c0;
+            bol = 0;
+            continue;
+        }
+        /* text: copied as it is; a comment, string or character constant is one piece, and a line end begins a line */
+        if (s[i] == '"' || s[i] == '\'') {
+            char q = s[i];
+            r[k++] = s[i++];
+            while (i < n && s[i] != q && s[i] != '\n') { if (s[i] == '\\' && i + 1 < n) r[k++] = s[i++]; r[k++] = s[i++]; }
+            if (i < n && s[i] == q) r[k++] = s[i++];
+        } else if (i + 1 < n && s[i] == '/' && s[i + 1] == '*') {
+            size_t e = i + 2;
+            while (e + 1 < n && !(s[e] == '*' && s[e + 1] == '/')) e++;
+            if (e + 1 >= n) { i = n; continue; }                         /* a comment with no end is gone, to the end of the text */
+            while (i < e + 2) r[k++] = s[i++];
+        } else if (i + 1 < n && s[i] == '/' && s[i + 1] == '/') {
+            while (i < n && s[i] != '\n') r[k++] = s[i++];
+        } else {
+            if (s[i] == '\n') bol = 1;
+            r[k++] = s[i++];
+        }
+    }
+    r[k] = 0;
+    return r;
+}
+/* the text being read: where the runtime of the rewrites keeps it */
+static const char *cpp_text_start(void) { return hbnf_rr_n ? hbnf_rr_buf : hbnf_text0; }
+/* comments and runs of blanks in a macro's replacement are one blank, and the ends have none (C11 6.10.3 p1: the same white space is the same) */
+static char *cpp_norm(const char *s, size_t n) {
+    char *r = (char *)malloc(n + 1);
+    size_t i = 0, k = 0;
+    int sp = 0;
+    while (i < n) {
+        if (s[i] == '/' && i + 1 < n && s[i + 1] == '*') { i += 2; while (i + 1 < n && !(s[i] == '*' && s[i + 1] == '/')) i++; i += 2; sp = 1; continue; }
+        if (s[i] == '/' && i + 1 < n && s[i + 1] == '/') { while (i < n && s[i] != '\n') i++; sp = 1; continue; }
+        if (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') { sp = 1; i++; continue; }
+        if (sp && k > 0) r[k++] = ' ';
+        sp = 0;
+        if (s[i] == '"' || s[i] == '\'') { char q = s[i]; r[k++] = s[i++]; while (i < n && s[i] != q) { if (s[i] == '\\' && i + 1 < n) r[k++] = s[i++]; r[k++] = s[i++]; } if (i < n) r[k++] = s[i++]; continue; }
+        r[k++] = s[i++];
+    }
+    r[k] = 0;
+    return r;
+}
+/* a `#define` line: its name against the macros there are (a different replacement or parameter list is `"X" redefined`), and what is wrong in it */
+static void cpp_define_check(const char *text, size_t len) {
+    const char *s = text, *e = text + len, *nm, *pend = NULL, *body;
+    size_t nl, pl = 0;
+    int is_fun = 0, variadic = 0, i;
+    char *np_, *nb, *op = NULL, *ob = NULL;
+    const char *ov;  size_t ovn;
+    s += (*s == '%') ? 2 : 1;                                             /* the # */
+    for (;;) {
+        if (s < e && (*s == ' ' || *s == '\t')) s++;
+        else if (s + 1 < e && s[0] == '/' && s[1] == '*') { s += 2; while (s + 1 < e && !(s[0] == '*' && s[1] == '/')) s++; s += 2; }
+        else break;
+    }
+    s += 6;                                                                /* define */
+    for (;;) {
+        if (s < e && (*s == ' ' || *s == '\t')) s++;
+        else if (s + 1 < e && s[0] == '/' && s[1] == '*') { s += 2; while (s + 1 < e && !(s[0] == '*' && s[1] == '/')) s++; s += 2; }
+        else break;
+    }
+    nm = s;
+    if (s >= e || !(isalpha((unsigned char)*s) || *s == '_')) return;      /* no name, or none that is one: their own rules say so */
+    while (s < e && (isalnum((unsigned char)*s) || *s == '_')) s++;
+    nl = (size_t)(s - nm);
+    if (nl == 7 && memcmp(nm, "defined", 7) == 0) return;
+    cpp_note_def(nm, nl, text);
+    if (nl == 11 && memcmp(nm, "__VA_ARGS__", 11) == 0) cpp_diag(text, "warning", "'__VA_ARGS__' can only appear in the expansion of a C99 variadic macro");
+    if (s < e && *s == '(') {
+        const char *q = s + 1;
+        is_fun = 1;
+        while (q < e && *q != ')' && *q != '\n') q++;
+        if (q >= e || *q != ')') return;
+        pend = q;
+        body = q + 1;
+        np_ = cpp_dup(s + 1, (size_t)(q - s - 1));
+        for (i = 0; np_[i]; i++) if (np_[i] == '.' && np_[i + 1] == '.' && np_[i + 2] == '.') variadic = 1;
+        /* the parameters without blanks round the commas */
+        { char *w = np_, *r = np_;  while (*r) { if (*r == ' ' || *r == '\t') { r++; continue; } *w++ = *r++; }  *w = 0; }
+        /* a parameter twice */
+        { char *a = np_;
+          while (*a) {
+              char *b = a, *c2;
+              while (*b && *b != ',') b++;
+              for (c2 = b; *c2; ) {
+                  char *d = c2 + 1, *f = d;
+                  while (*f && *f != ',') f++;
+                  if ((size_t)(b - a) == (size_t)(f - d) && b > a && memcmp(a, d, (size_t)(b - a)) == 0 && !(b - a >= 3 && memcmp(a + (b - a) - 3, "...", 3) == 0)) {
+                      char *nmx = cpp_dup(a, (size_t)(b - a));
+                      cpp_diag(text, "error", "duplicate macro parameter '%s'", nmx);
+                      free(nmx);
+                  }
+                  c2 = f;
+              }
+              a = *b ? b + 1 : b;
+          }
+        }
+        (void)pl;
+    } else { np_ = cpp_dup("", 0);  body = s; }
+    { const char *bend = e;  while (bend > body && (bend[-1] == '\n' || bend[-1] == '\r')) bend--;  nb = cpp_norm(body, (size_t)(bend - body)); }
+    /* `##` at either end of the replacement; `#` in a function-like macro that is not before a parameter */
+    if ((nb[0] == '#' && nb[1] == '#') || (nb[0] == '%' && nb[1] == ':' && nb[2] == '%' && nb[3] == ':')
+        || (strlen(nb) >= 2 && (strcmp(nb + strlen(nb) - 2, "##") == 0 || (strlen(nb) >= 4 && strcmp(nb + strlen(nb) - 4, "%:%:") == 0))))
+        cpp_diag(text, "error", "'##' cannot appear at either end of a macro expansion");
+    if (is_fun) {
+        const char *q = nb;
+        while (*q) {
+            if (*q == '"' || *q == '\'') { char qc = *q++; while (*q && *q != qc) { if (*q == '\\' && q[1]) q++; q++; } if (*q) q++; continue; }
+            if ((q[0] == '#' && q[1] != '#' && (q == nb || q[-1] != '#')) || (q[0] == '%' && q[1] == ':' && !(q[2] == '%' && q[3] == ':') && !(q > nb && q[-1] == ':'))) {
+                const char *a = q + (q[0] == '#' ? 1 : 2);
+                size_t wl = 0;
+                int isparam = 0;
+                char *pc = np_, *pe2;
+                while (*a == ' ') a++;
+                while (isalnum((unsigned char)a[wl]) || a[wl] == '_') wl++;
+                for (pe2 = pc; *pe2 || pe2 == pc; ) {
+                    char *comma = strchr(pe2, ',');
+                    size_t len = comma ? (size_t)(comma - pe2) : strlen(pe2);
+                    if (len >= 3 && memcmp(pe2 + len - 3, "...", 3) == 0) { if (len == 3 ? wl == 11 && memcmp(a, "__VA_ARGS__", 11) == 0 : (wl == len - 3 && memcmp(a, pe2, wl) == 0)) isparam = 1; }
+                    else if (len == wl && wl && memcmp(a, pe2, wl) == 0) isparam = 1;
+                    if (!comma) break;
+                    pe2 = comma + 1;
+                }
+                if (wl == 10 && memcmp(a, "__VA_OPT__", 10) == 0 && variadic) isparam = 1;
+                if (!isparam) { cpp_diag(text, "error", "'#' is not followed by a macro parameter"); break; }
+                q = a + wl;
+                continue;
+            }
+            q++;
+        }
+    }
+    /* __VA_ARGS__ in the replacement of a macro that is not variadic */
+    if (!variadic) {
+        const char *q = nb;
+        while ((q = strstr(q, "__VA_ARGS__")) != NULL) {
+            if ((q == nb || !(isalnum((unsigned char)q[-1]) || q[-1] == '_')) && !(isalnum((unsigned char)q[11]) || q[11] == '_')) {
+                cpp_diag(text, "warning", "'__VA_ARGS__' can only appear in the expansion of a C99 variadic macro");
+                break;
+            }
+            q += 11;
+        }
+    }
+    if (hbnf_ctx_has(CTX_defs, nm, nl) && (hbnf_ctx_has(CTX_objs, nm, nl) || hbnf_ctx_has(CTX_funs, nm, nl))) {
+        int was_fun = hbnf_ctx_has(CTX_funs, nm, nl);
+        int differ = was_fun != is_fun;
+        if (!differ && hbnf_fact_get(CTX_body, nm, nl, &ov, &ovn)) { ob = cpp_norm(ov, ovn);  differ = strcmp(ob, nb) != 0; }
+        if (!differ && is_fun && hbnf_fact_get(CTX_params, nm, nl, &ov, &ovn)) {
+            char *w, *r;
+            op = cpp_dup(ov, ovn);
+            for (w = r = op; *r; r++) if (*r != ' ' && *r != '\t') *w++ = *r;
+            *w = 0;
+            differ = strcmp(op, np_) != 0;
+        }
+        if (differ) { char *n2 = cpp_dup(nm, nl); cpp_diag(text, "warning", "'%s' redefined", n2); free(n2); }
+    }
+    (void)pend;
+    free(np_);  free(nb);  free(op);  free(ob);
+}
+/* the number of arguments of a macro call against what the macro takes (the runtime of the rewrites calls this from the substitution) */
+/* a paste that is no token (the runtime of the rewrites calls this from the substitution) */
+static void cpp_paste_bad(const char *at, const char *name, size_t nl, const char *l, size_t ln, const char *r, size_t rn) {
+    char *a = cpp_dup(l, ln), *b = cpp_dup(r, rn);
+    int i;
+    const char *dat = at;
+    /* gcc says it at the `##`, which is in the definition of the macro: where the macro was defined */
+    for (i = cpp_ndef - 1; i >= 0; i--) if (cpp_def_nl[i] == nl && memcmp(cpp_def_name[i], name, nl) == 0) { dat = NULL; break; }
+    if (dat) cpp_diag(at, "error", "pasting '%s' and '%s' does not give a valid preprocessing token", a, b);
+    else cpp_diag_at(cpp_def_file[i], cpp_def_line[i], "error", "pasting '%s' and '%s' does not give a valid preprocessing token", a, b);
+    free(a);  free(b);
+}
+static void cpp_arity(const char *at, const char *name, size_t nl, int np, int na, int variadic) {
+    char *n2 = cpp_dup(name, nl);
+    if (variadic ? na < np : na != np) {
+        if (na < np) cpp_diag(at, "error", "macro '%s' requires %d arguments, but only %d given", n2, variadic ? np + 1 : np, na);
+        else cpp_diag(at, "error", "macro '%s' passed %d arguments, but takes just %d", n2, na, np);
+    }
+    free(n2);
+}
+}

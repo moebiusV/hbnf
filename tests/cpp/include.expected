@@ -53,3 +53,11 @@ main_file
 =
 "tests/cpp/include.c"
 ;
+int
+once_decl
+=
+2
+;
+int
+after_once
+;

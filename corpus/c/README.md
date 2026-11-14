@@ -20,7 +20,7 @@ GCC 4.0.4's against `gnu99`.  C11, C17 and C23 are not in it: no yacc grammar of
 `c11.hbnf` is the grammar of ISO/IEC 9899:2011 Annex A with the standard's rule names, plus the GNU
 forms system headers use; `c-words.hbnf` has the tokens as rules of characters.  It is the first piece
 of a small C compiler written in HyperBNF (parse, check, lower, write), and it parses what a C preprocessor
-produces: hbnf has no preprocessor, so the tools below use gcc's (`gcc -E -P`).
+produces.  The preprocessor is `cpp.hbnf` (below); the tools that scan other people's C can use gcc's (`gcc -E -P`) or this one.
 
 ## Checked against gcc
 
@@ -88,5 +88,20 @@ alternatives that begin alike read that beginning once (`tests/factor.sh`, `test
 ## Not done
 
 Keywords outside the standard and GNU's common ones (`__label__`, `typeof` is done, `_Float128` and
-friends are not), a preprocessor, semantic checks (types, undeclared names, constraints such as "two
+friends are not), semantic checks (types, undeclared names, constraints such as "two
 or more data types"), and the other backends.
+
+## The preprocessor: `cpp.hbnf`
+
+The C preprocessor as a grammar: object and function macros with `#`, `##`, `__VA_ARGS__` and `__VA_OPT__`, conditionals with the `#if` expression, `#include` (and
+`#include_next`, `#import`, `#embed`), `#line`, `#pragma once`, `_Pragma`, `#assert`, digraphs, trigraphs, the GNU predefined macros and the feature tests
+(`__has_include`, `__has_attribute`, `__has_builtin`, ...), and gcc's diagnostics.  Its tables of what gcc defines and answers are made from gcc by
+`tools/gen_gcc_tables.py` (`cpp-gnu.hbnf`, tied to the gcc named in its header: gcc 16.2.0).  The program is the parser and `tests/cpp-main.c`, which takes gcc's options
+(`-undef -nostdinc -trigraphs -I -D -U`); `cpp_output` makes the text a compiler's `-E` gives.
+
+How it is checked, with gcc the authority and clang compared:
+- `sh tests/cpp.sh` (`GCC=/path/to/gcc` for another gcc): every file of `tests/cpp` against gcc's tokens, clang's, and the C99 grammar's reading of the result;
+  the diagnostics of `tests/cpp/diag`; random programs; and the harness's own checks.
+- `python3 scripts/cpp-scan.py DIR...`: a differential over any directory of C files (gcc's own `gcc.dg/cpp` testsuite, say), in classes.
+- `python3 scripts/cc-scan.py DIR...`: the same for a C grammar, preprocessed by gcc or (`--pp ours`) by this one, with `gcc -fsyntax-only` as the reference.
+- `sh scripts/build-gcc.sh` builds gcc 16.2 (C only) to compare with; without it the gcc in the path is used (the checks that depend on its version say so).

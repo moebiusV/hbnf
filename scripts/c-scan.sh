@@ -5,10 +5,14 @@
 # accepts and the first few it refuses.  The preprocessor is gcc's: hbnf has no C preprocessor.
 #   HBNF=/path/to/hbnf sh scripts/c-scan.sh DIR...                      the C11 grammar, gcc -std=gnu11
 #   GRAMMAR=c89 STD=c89 sh scripts/c-scan.sh DIR...                      the C90 grammar, gcc -std=c89 -pedantic-errors
+#   GCC=/path/to/gcc                                                      the compiler that is the reference (default gcc in the path; see scripts/build-gcc.sh)
+#   PPBIN=/path/to/pp                                                      preprocess with the program of corpus/c/cpp.hbnf (as tests/cpp.sh makes it) instead of gcc -E
+#   JOBS=N                                                                 files at once (default 8)
 set -u
 cd "$(dirname "$0")/.."
 export HBNF_TEMPLATES="${HBNF_TEMPLATES:-$(pwd)/templates}"
 CLI=${HBNF:-./hbnf}
+GCC=${GCC:-gcc}
 if [ -n "${KEEP:-}" ]; then W=$KEEP; mkdir -p "$W"; else W=$(mktemp -d); trap 'rm -rf "$W"' EXIT; fi   # KEEP=dir keeps the preprocessed files
 D=corpus/c
 G=${GRAMMAR:-c11}; STD=${STD:-gnu11}
