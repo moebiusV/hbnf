@@ -30,7 +30,10 @@ into actual code".  Stage (a) as hbnf grammars is a question for the author (R71
    cmake, cargo, autoconf, ninja and the rest, each a grammar in `builders/`) is applied after the language stage.  Whether a builder
    reads the same IR as the layout and language stages is a question for the author (R716: "possibly it gets access to the same ir");
    hbnf choosing which code goes in which files (R610) means a builder needs at least the list of emitted files.  Nothing of this is
-   built (`builders/`, `project.conf`, the `build` directive do not exist).
+   built (`builders/`, `project.conf`, the `build` directive do not exist).  The builder is "a compile plus packaging concern" (R718):
+   a language that emits no `.o` files (python, node) still needs its emitted files wired together so that they run properly and can be
+   packaged properly, and the builder has to know how; for a compiled language it also compiles and links.  Details tbd: what wiring and
+   packaging each language needs, and whether that knowledge lives in `builders/` or in the language directory (R614).
 
 Whether the output of the layout is a different IR format or the same one is *details tbd* (R714: "possibly a different ir format,
 possibly not").

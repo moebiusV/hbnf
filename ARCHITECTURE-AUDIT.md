@@ -28,9 +28,11 @@ Status vocabulary (the author's rule): a decision stays a decision when its deta
 7. **The build system chosen is applied after the language stage.**  The build system was already decided (R610 to R618, R634:
    `build` directive and `project.conf`; standalone, make, cmake, cargo, autoconf, ninja and the rest, a grammar each in `builders/`),
    but no document connected it to the pipeline.  R715.  Whether a builder reads the same IR is the author's "possibly" (R716).
-8. **"Jets" is fine, "it is a term of art"** (R713): the removal of the word in R352 is withdrawn.
+8. **The builder is "a compile plus packaging concern"**: languages that emit no `.o` files (python, node) still need their emitted
+   files wired together to run and to be packaged, and the builder must know how.  R718.
+9. **"Jets" is fine, "it is a term of art"** (R713): the removal of the word in R352 is withdrawn.
 
-Details tbd: whether the layout's output is a different IR format or the same one, how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),
+Details tbd: what wiring and packaging each language needs (R718), whether the layout's output is a different IR format or the same one, how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),
 the loading interface.  The callback interface in `LANGUAGES.md` (`hb_lang_*`, `dlopen`) is the implementer's proposal, not a decision.
 
 ### Language targets and notation (2026-11-11; R594 to R602)
