@@ -8,17 +8,17 @@
 - The decision register: each of the author's messages cited here is a numbered row [R<n>] of the append-only [decision register](decision-register.md) (the date, the kind, his words, the subjects, and what a later row replaced); numbers are never reused, a replaced row points forward.
 - Checked, not guessed: a status of DONE needs evidence; what could not be checked is IN THE AIR and says why.
 - `Rationale` is why he chose it, in his own words; `Precedent` is a system, language, standard or design named as a referent, with whether his choice follows it (chosen), he turned it down (rejected) or it was only compared (considered), and who named it (the author, or the assistant and he accepted it or did not take it up). Only what the messages say: nothing is added from outside. The precedents are indexed by name near the end.
-- The chains behind it are in the decision log of the same project; the evidence is as of the repositories read on 2026-11-10.
+- The chains behind it are in the decision log of the same project; the evidence is as of the repository at origin/main commit 01e9b2f (2026-11-14) for the entries revised on that date (they cite the register rows up to R712); the other entries keep the evidence of the reading of 2026-11-10, and a "Doc differs" line describes the documents as they stood at 01e9b2f, before the corrections made in the same revision.
 
 ## Contents
 
 - [Summary](#summary)
-- [Left to do (68)](#left-to-do-68)
-- [Left in the air (27)](#left-in-the-air-27)
+- [Left to do (69)](#left-to-do-69)
+- [Left in the air (23)](#left-in-the-air-23)
 - [Rejected or replaced (7)](#rejected-or-replaced-7)
-- [Done (178)](#done-178)
+- [Done (182)](#done-182)
 - [Precedents, by name](#precedents-by-name)
-- [Where the current docs or code differ from the decisions (53)](#where-the-current-docs-or-code-differ-from-the-decisions-53)
+- [Where the current docs or code differ from the decisions (56)](#where-the-current-docs-or-code-differ-from-the-decisions-56)
 - [Decision briefing: open notation questions](#decision-briefing-open-notation-questions)
 - [Briefing E: hbnf, items Q18 to Q21](#briefing-e-hbnf-items-q18-to-q21)
 - [Q18 Namespaces and qualified names (REVIEW)](#q18-namespaces-and-qualified-names-review)
@@ -28,12 +28,12 @@
 
 # Summary
 
-- Left to do: 68 of 280 subjects
-- Left in the air: 27 of 280 subjects
-- Rejected or replaced: 7 of 280 subjects
-- Done: 178 of 280 subjects
+- Left to do: 69 of 281 subjects
+- Left in the air: 23 of 281 subjects
+- Rejected or replaced: 7 of 281 subjects
+- Done: 182 of 281 subjects
 
-# Left to do (68)
+# Left to do (69)
 
 - Decided, and not yet in the current code or docs (or only partly).
 
@@ -44,8 +44,8 @@
 - Decided: 2026-09-29 decided: "clean up the tarballs but the .txt files should all go in an Attic" \[R119\]
 - Rationale and precedent: none stated in the sources
 - Evidence: not found: git ls-files has no Attic directory; TODO.md section 6 lists "hbnf-\*.tar.gz files and hbnf15.txt untracked" in the repository root
-- Evidence: uncommitted (other machine): hbnf15.txt, 9 hbnf-\*-2026-10-0N.tar.gz, hbnf.old, 13 core.\* files, HISTORY.draft.md still loose in the repository root (copy of 2026-11-09), and no Attic directory; the packaging repo .gitignore lists Attic/ for ada-on-alpine only
-- Left: move the .txt files to an Attic and delete the tarballs (on his machine; the clone cannot show it)
+- Evidence: a clone shows no Attic directory and none of the loose files; whether they remain on the author's disk is not checkable from the repository
+- Left: move the .txt files to an Attic and delete the tarballs (outside the repository; a clone cannot show it)
 
 ### Branching
 - Status: TO DO — details pending: the rule is not stated in the repository; branches are not carried by a clone (latest decision 2026-10-02 \[R203\])
@@ -53,7 +53,7 @@
 - Rationale: "just abandon when done, when they're merged with main and main is pushed, that is good enough" \[R203\]
 - Rationale: asks why still on two branches: "isn't 4c complete now and should be merged and new work goes on 4d or some new branch?" \[R202\]
 - Evidence: not checked: the clone has only main and origin/main (git branch -a), which neither shows nor contradicts the rule that merged branches are left alone
-- Evidence: searched uncommitted (other machine) and packaging repo: no branch information; ada-on-alpine seed-gcc-\<arch\> orphan branches exist by design
+- Evidence: not found: branch information is not in the repository; the packaging repo has no branch rule either; ada-on-alpine seed-gcc-\<arch\> orphan branches exist by design
 - Left: state the rule (merged branches are abandoned, not deleted) in a document; whether his local branches (4c, 4d, others) still exist
 
 ### Bug fixing policy
@@ -79,7 +79,7 @@
 - Decided: 2026-09-30 decided: the harness config file "should be parsed with hbnf if it isn't already" \[R133\]
 - Rationale and precedent: none stated in the sources
 - Evidence: not checked: the harness is not in this repository
-- Evidence: searched uncommitted (other machine) and packaging repo: harness config not present
+- Evidence: not found: harness config is in neither this repository nor the packaging repo
 - Left: whether the harness config is parsed with hbnf
 
 ### Decision log
@@ -87,7 +87,7 @@
 - Decided: 2026-11-10 decided: "after that, the same thing for hbnf too" \[R590\]
 - Rationale and precedent: none stated in the sources
 - Evidence: not checked: the decision log lives in docs/decision-log of the pdp64 repository, not in hbnf; decisions-and-status.md exists in the hbnf repository (HEAD 5224390, 2026-11-09); the decision (2026-11-10) is later than HEAD; this ledger is part of that work
-- Evidence: searched: nothing new in the the other machine or packaging copies
+- Evidence: searched: nothing new in the packaging copies
 - Left: finish the decision-log pass for hbnf and bring decisions-and-status.md into line with it
 
 ### Documentation style and upkeep
@@ -98,7 +98,7 @@
 - Rationale: "none of that self-referential ai slop" \[R220\]
 - Rationale: "deslop the readme. no mdash" \[R163\]
 - Evidence: TODO.md section 5: "README, WHY.md, HISTORY.md benchmark blocks ... should be re-read against the new numbers"; "HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md (untracked): fold into HISTORY.md or delete"; bench/tokens.sh broken, so the token figures are the 10-27 ones; README Status line (README.md:5) is dated "31 October 2026" while the bench notes (README.md:319, 348) are 2026-11-05; "the daemons it was written for" is gone (commit 3ba4a78)
-- Evidence: uncommitted (other machine): HISTORY.draft.md (1702 lines, 2026-10-01), RESUME-9b.md and RESUME-9c.md (header "done, committed and pushed (historical)") are still untracked and not folded or deleted
+- Evidence: HISTORY.draft.md, RESUME-9b.md and RESUME-9c.md are untracked files, so a clone does not hold them to fold or delete
 - Left: re-read the prose against the 11-05 numbers; fix tokens.sh; fold or delete HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md
 
 ### Patches and tarballs
@@ -114,15 +114,15 @@
 - Left: the rule (apply the patches, run the check only after all are merged) is stated in no repository document; where it is to be written is pending
 
 ### Working rules and workflow
-- Status: TO DO — fourteen finished agents' worktrees are still on the other machine (latest decision 2026-11-03 \[R548\])
+- Status: TO DO — fourteen finished agents' worktrees are still on the author's disk, outside the repository (latest decision 2026-11-03 \[R548\])
 - Decided: 2026-11-03 decided: "and remove the finished agents work trees" \[R548\]
 - Rationale: "stop rewriting shit and just fix what isn't implemented. don't work around absent features" \[R307\]
 - Rationale: "why are you doing the fixes on a branch? merge them and push them" \[R54\]
 - Rationale: modify stock BNF "as little as possible ... as long as it feel natural, and is not shocking or supringing to a human" \[R517\]
 - Precedent: stock BNF (chosen; named by author): extend with minimal change for context switching \[R517\]
 - Precedent: COBOL embedded JCL, SQL, CICS, PICTURE (considered; named by author): motivates a syntax for switching context \[R517\]
-- Evidence: not checked: a fresh clone has one worktree (git worktree list shows only main); TODO.md section 1 says the paused speed agent's worktree the worktrees folder (agent-a62ce11167790e13f) is intact (paused, not finished)
-- Evidence: uncommitted (other machine): the worktrees folder holds 15 agent-\* directories (594 MB per TODO.md:121); only agent-a62ce11167790e13f is the paused one (TODO.md:9)
+- Evidence: not checked: a fresh clone has one worktree (git worktree list shows only main); TODO.md section 1 says the paused speed agent's worktree is intact (paused, not finished)
+- Evidence: a clone cannot show the other worktrees; only the paused one is named in TODO.md
 - Left: remove the 14 finished worktrees
 
 ## 01 Goals and priorities
@@ -135,14 +135,14 @@
 - Precedent: yacc/bison (chosen; named by author): the bar to match and beat \[R142\]
 - Precedent: RFC BNF (chosen; named by author): test case with very trivial modifications \[R142\]
 - Precedent: OpenBSD daemons (chosen; named by author): drop-in replacement as test case \[R142\]
-- Evidence: README.md notation and speed tables against yacc, bison, tree-sitter, ANTLR; TODO.md:85-89 (error recovery, GLR, ports to Rust/Zig/Ada not done) \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
+- Evidence: README.md notation and speed tables against yacc, bison, tree-sitter, ANTLR; TODO.md:85-89 (error recovery, GLR, ports to Rust/Zig/Ada not done)
 - Left: details pending: no criterion for "on par"; error recovery and GLR not started (TODO.md:85-86)
 
 ### Feature bundle
 - Status: TO DO — macros, include and statements are built (C only); the HBNF\_LIST\_\* defines were not found (latest decision 2026-09-22 \[R74\])
 - Decided: 2026-09-22 decided: Implement the #5 bundle (macros, include, httpd braced blocks, scalar cycle, libc typedef clashes, HBNF\_LIST\_\* defines) "while keeping cpu and memory usage minimal" \[R74\]
 - Rationale and precedent: none stated in the sources
-- Evidence: ABNF.md:347 "\`statements\`, \`macros \<rule\>\`, \`includes \<rule\>\` ... C only"; ABNF.md:342 "\`include\` is relative to the including file", \`prefix "pf\_"\`; not found: searched ABNF.md, grammars/README.md, hbnf\_c.adb, templates for "HBNF\_LIST" (only \`List\_Override\` in hbnf\_c.adb:212-234) \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): not found in any of them: HBNF\_LIST (snapshot RFCPLAN.md only has the \`listops\` directive); packaging repo: testing/hbnf/APKBUILD pins 0.7.0\_git20261022, older than the bundle work
+- Evidence: ABNF.md:347 "\`statements\`, \`macros \<rule\>\`, \`includes \<rule\>\` ... C only"; ABNF.md:342 "\`include\` is relative to the including file", \`prefix "pf\_"\`; not found: searched ABNF.md, grammars/README.md, hbnf\_c.adb, templates for "HBNF\_LIST" (only \`List\_Override\` in hbnf\_c.adb:212-234)
 - Left: HBNF\_LIST\_\* defines not found under that name; scalar cycle and libc typedef clashes not separately verified; macros/statements warn and are ignored in the other backends
 
 ### Priority list
@@ -153,7 +153,7 @@
 - Precedent: Common Lisp restart (considered; named by author): "only for you to think about then make recommendtions" \[R450\]
 - Precedent: JSON/TOML/YAML libraries (considered; named by author): to beat in proper benchmarks \[R450\]
 - Precedent: tree-sitter (chosen; named by author): done first, then the Zig emitter \[R367\]
-- Evidence: README.md:19-23 "Next: ... C17 and C23 ... error recovery ... benchmark of the four backends" (kept as later); commits e837fbf "bench: every table of the C parsers measured again, on glibc"; commit e5a464e hidden token; TODO.md:54-86 (queue of CONTEXTS items 1-63 and open decisions) \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence; the untracked handoffs RESUME-9b/9c are dated 2026-10-05/06, before this decision
+- Evidence: README.md:19-23 "Next: ... C17 and C23 ... error recovery ... benchmark of the four backends" (kept as later); commits e837fbf "bench: every table of the C parsers measured again, on glibc"; commit e5a464e hidden token; TODO.md:54-86 (queue of CONTEXTS items 1-63 and open decisions)
 - Left: TODO.md section 3 queued reader and generator fixes (items 1-63) and section 2 XML items are unchecked boxes; Prio/Note lines empty
 
 ## 02 Notation and grammar design
@@ -163,7 +163,7 @@
 - Decided: 2026-09-28 decided: "ascii.hbnf should definitely have CRLF, WSP and LWSP" \[R112\]
 - Rationale: "those can be implemented in an ascii.hbnf very simply without touching the ada code" \[R111\]
 - Precedent: ABNF (chosen; named by author): "ascii.hbnf should definitely have CRLF, WSP and LWSP" \[R112\]
-- Evidence: grammars/common.hbnf:22-24 \`WSP = SP \| HTAB\`, \`CRLF = CR LF\`; grammars/ascii.hbnf has the named characters; ABNF.md:196 "\`LWSP\` ... Not yet: a character rule cannot repeat"; not found: LWSP in any grammars/\*.hbnf \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): LWSP absent from grammars/ at HEAD; uncommitted (other machine) snapshot RFCPLAN.md:187 says "\`LWSP\` waits for repetition" (2026-10-03), same state
+- Evidence: grammars/common.hbnf:22-24 \`WSP = SP \| HTAB\`, \`CRLF = CR LF\`; grammars/ascii.hbnf has the named characters; ABNF.md:196 "\`LWSP\` ... Not yet: a character rule cannot repeat"; not found: LWSP in any grammars/\*.hbnf ; LWSP absent from grammars/
 - Doc differs: RFCPLAN.md:184 puts the classes in common.hbnf, ascii.hbnf only the named characters (as the 2026-10-02 file split decided)
 - Left: define LWSP (corpus/rfc/rfc5234-1.hbnf:42 has its own copy); ABNF.md:196 "character rule cannot repeat" may be stale since \`\*~LF\` is accepted in rules of characters
 
@@ -174,27 +174,20 @@
 - Evidence: ABNF.md:175 "\`'c'\` (character literal) ... one code point"; RFCPLAN.md:358 POSIX \`'\|'\` is "hbnf's \`'c'\`"
 - Doc differs: ABNF.md:175 and :213 still say \`'c'\` is one code point; CONTEXTS.md:909 (section 26 item 1, "the user") and TODO.md:58 "\`'c'\` is \`"c"\`" queue the change; not built
 
-### Column access
-- Status: TO DO — details pending: \`col\` is only proposed, 0-based and \`where (cond)\` unconfirmed, nothing built (latest decision 2026-11-03 \[R539\])
-- Decided: 2026-11-03 decided: "a rule should be able to access its col value" \[R539\]
-- Rationale and precedent: none stated in the sources
-- Evidence: CONTEXTS.md:20 "\`col\` and \`where (cond)\`; \`30WS\` ... \*\*proposed\*\* ... to be confirmed"; TODO.md:78; \`%col\` exists only as the old frame-of-numbers form (ABNF.md:106) ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
-- Left: confirm the spelling and build \`col\`; fixed-format COBOL waits on it (CONTEXTS.md:21)
-
 ### Core number types
 - Status: TO DO — number terminals are in the reader, but no C-number rules were put in the shared grammars (latest decision 2026-09-30 \[R139\])
 - Decided: 2026-09-30 decided: "not lexer change; just grammar rules on core.hbnf and jets" \[R139\]
 - Rationale: "since our core includes all the whitespace classes, the control characters, etc, why not the number types? all the c representations" \[R136\]
 - Rationale: "not lexer change; just grammar rules on core.hbnf and jets" \[R139\]
 - Precedent: C numbers (chosen; named by author): as core number types \[R136\]
-- Evidence: grammars/common.hbnf has only the RFC 5234 classes; grammars/obconf.hbnf:36 \`int = 1\*DIGIT \| "-" 1\*DIGIT\`; ABNF.md:178 \`0x41\`, \`0b1000001\` are reader notation for code points, not number token rules \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
+- Evidence: grammars/common.hbnf has only the RFC 5234 classes; grammars/obconf.hbnf:36 \`int = 1\*DIGIT \| "-" 1\*DIGIT\`; ABNF.md:178 \`0x41\`, \`0b1000001\` are reader notation for code points, not number token rules
 - Left: rules for 0x, 0b, 0o, 0 and \\0 style C numbers in common.hbnf; per-language versions exist only in corpus/c
 
 ### Core rules
 - Status: TO DO — shipped in common.hbnf; details pending: LWSP is missing (latest decision 2026-09-24 \[R101\])
 - Decided: 2026-09-24 decided: "also add Numeric terminals and ranges ... Core rules shipped with the spec: ALPHA, DIGIT, HEXDIG, SP, HTAB, CRLF, WSP, VCHAR, etc.", with "implement whatever looks quick and easy now" \[R101\]; the file layout was settled 2026-10-02 (see Common grammar files)
 - Precedent: ABNF (considered; named by author): "Core rules shipped with the spec" proposed for evaluation \[R101\]
-- Evidence: grammars/common.hbnf:11-24 DIGIT ALPHA HEXDIG BIT CHAR CTL VCHAR OCTET WSP CRLF; RFCPLAN.md:184 (decision 10) "Core rules. \`common.hbnf\` includes \`ascii.hbnf\`"; ABNF.md:196 "\`LWSP\` ... Not yet" \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence; LWSP still missing
+- Evidence: grammars/common.hbnf:11-24 DIGIT ALPHA HEXDIG BIT CHAR CTL VCHAR OCTET WSP CRLF; RFCPLAN.md:184 (decision 10) "Core rules. \`common.hbnf\` includes \`ascii.hbnf\`"; ABNF.md:196 "\`LWSP\` ... Not yet" ; LWSP still missing
 - Left: details pending: LWSP (see Ascii hbnf); the later file layout decisions of 2026-10-02 cover the rest
 
 ### Example rules
@@ -202,30 +195,21 @@
 - Decided: 2026-09-21 decided: wants example rules for money (2 digit decimal), floating point etc.; accept astbnf in utf8 and utf16 form, output utf8 \[R28\]
 - Rationale: example rules for money and floating point "so people see how it can be used" \[R28\]
 - Precedent: ABNF (chosen; named by author): to confirm it sweetly represents these character sequences \[R28\]
-- Evidence: not found: grep "money" over \*.md and \*.hbnf found USENIXSUBMISSION.md (the first pass missed ABNF.md:127); CHARLAYER.md:8 and :17 "UTF-16 ... not built"; floats appear in corpus/json, toml, c grammars \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): ABNF.md:127 does show \`money = 1\*DIGIT "." 2DIGIT\` as an inline character-rule example (committed, missed by the first pass), but no shipped example grammar file has it; UTF-16 still not built, no astbnf in any source
+- Evidence: not found: grep "money" over \*.md and \*.hbnf found USENIXSUBMISSION.md (the first pass missed ABNF.md:127); CHARLAYER.md:8 and :17 "UTF-16 ... not built"; floats appear in corpus/json, toml, c grammars ; ABNF.md:127 shows `money = 1\*DIGIT "." 2DIGIT` as an inline character-rule example, but no shipped example grammar file has it; UTF-16 is not built, no astbnf in any source
 - Left: a shipped money (2-digit decimal) example rule beyond the inline ABNF.md:127 example; UTF-16 input (astbnf itself is absent)
-
-### Facts stored by matched rules
-- Status: TO DO — details pending: decided yes, nothing built (latest decision 2026-11-03 \[R523\])
-- Decided: 2026-11-03 decided: Q9: "yes to facts". \[R523\]
-- Rationale: "such as the typedef thing in C. and I'm sure it will have a lot of use in COBOL." \[R519\]
-- Precedent: C typedef (considered; named by author): example of a fact stored by a matched rule \[R519\]
-- Precedent: COBOL (considered; named by author): expected to use facts heavily \[R519\]
-- Evidence: CONTEXTS.md:17 "Facts ... \*\*decided yes\*\*; nothing built"; TODO.md:79 "Facts ... decided yes, nothing built (13)" ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
-- Left: design the syntax and build facts keyed by name
 
 ### Grammar for HBNF itself
 - Status: TO DO — planned as step 13a, not built (latest decision 2026-10-02 \[R223\])
 - Decided: 2026-10-02 decided: Final step: a grammar for hbnf itself plus round trip pretty printer preserving comments, normalizing to = rules and ; comments unless passed "--preserve"; output in various historical styles \[R223\]
 - Rationale and precedent: none stated in the sources
-- Evidence: RFCPLAN.md:2244 "13a. A grammar for the notation, and a round-trip pretty printer ... call it \`hbnf.hbnf\`"; not found: hbnf.hbnf (find over the repository), "--preserve" in hbnf.adb \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no hbnf.hbnf in HEAD or in any snapshot tarball (only plan text); \`--preserve\` not found in hbnf.adb
+- Evidence: RFCPLAN.md:2244 "13a. A grammar for the notation, and a round-trip pretty printer ... call it \`hbnf.hbnf\`"; not found: hbnf.hbnf (find over the repository), "--preserve" in hbnf.adb ; no hbnf.hbnf in the tree (only plan text); `--preserve` not found in hbnf.adb
 - Left: write hbnf.hbnf, the \`--preserve\` printer and the historical styles; hbnf\_schema.hbnf is a different grammar (the config format)
 
 ### HTML islands
 - Status: TO DO — a variant \`html-islands.hbnf\` reads \`\<script\>\` with a stub JS grammar; CSS and the real js grammar are not wired in, island items open (latest decision 2026-11-03 \[R559\])
 - Decided: 2026-11-03 decided: "js and css should be in their own grammar files" \[R559\]
 - Rationale and precedent: none stated in the sources
-- Evidence: corpus/html/html-islands.hbnf:6 \`include "js-stub.hbnf" as js\`; corpus/js/ and corpus/css/ exist as separate grammars; TODO.md:97 "JS and CSS as islands (CONTEXTS 27); the island 26/27, 30, 31 items"; CONTEXTS.md:952 item 31 \`=\> grammar(js)\` after \`\<script\>\` generates nothing ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: corpus/html/html-islands.hbnf:6 \`include "js-stub.hbnf" as js\`; corpus/js/ and corpus/css/ exist as separate grammars; TODO.md:97 "JS and CSS as islands (CONTEXTS 27); the island 26/27, 30, 31 items"; CONTEXTS.md:952 item 31 \`=\> grammar(js)\` after \`\<script\>\` generates nothing
 - Left: islands in html for the full js and css grammars (items 27, 30, 31)
 
 ### Hyper rules and meta rules
@@ -238,7 +222,7 @@
 - Precedent: CDL (considered; named by author): named in the grammar lineage \[R440\]
 - Precedent: DCG (considered; named by author): named in the grammar lineage \[R440\]
 - Precedent: PEG / ANTLR (considered; named by author): asked whether ANTLR is PEG \[R440\]
-- Evidence: ABNF.md:106 "\*\*expanded\*\* ... or \*\*run\*\* ... numbers are expanded when they form a small table (up to 16 values ...) and run otherwise; \`--expand-params\` and \`--run-params\` choose"; not found: a benchmark of run against expand in bench/ or bench/results \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): tests/params-modes.sh (committed) checks that --expand-params and --run-params accept and refuse the same texts; it is a correctness test, not a timing benchmark, so the confirming bench is still not found
+- Evidence: ABNF.md:106 "\*\*expanded\*\* ... or \*\*run\*\* ... numbers are expanded when they form a small table (up to 16 values ...) and run otherwise; \`--expand-params\` and \`--run-params\` choose"; not found: a benchmark of run against expand in bench/ or bench/results ; tests/params-modes.sh (committed) checks that --expand-params and --run-params accept and refuse the same texts; it is a correctness test, not a timing benchmark, so the confirming bench is still not found
 - Left: bench expanded against run for bounded domains and set the rule from it; open potentials (\`\$\`, toml/yaml use of w-grammar, cdl/dcg, C++ overloading) are undecided
 
 ### Keywords without % and fewer sigils
@@ -246,7 +230,7 @@
 - Decided: 2026-11-03 decided: Dislikes % noise "especially for keywords". \[R538\]
 - Rationale: "I'm tired of % for keywords; we already have \\"\\" and '' literals, we can have keywords in hyperbnf too without the % as long as it looks natural to read." \[R518\]
 - Rationale: "the less we need to use % @ and \$ in our grammars the better" \[R516\]
-- Evidence: CONTEXTS.md:15 "\*\*decided\*\* as to reserved words; the spellings of \`%label\`, \`%num\`, \`%action\` and the rest are \*\*open\*\*; nothing built"; TODO.md:77 same; ABNF.md:123 still shows \`%label\` ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: CONTEXTS.md:15 "\*\*decided\*\* as to reserved words; the spellings of \`%label\`, \`%num\`, \`%action\` and the rest are \*\*open\*\*; nothing built"; TODO.md:77 same; ABNF.md:123 still shows \`%label\`
 - Left: choose and build the spellings of the remaining \`%\` words
 
 ### Macros
@@ -255,8 +239,18 @@
 - Rationale: "keep a trail so we know where values come from and where they are invoked" instead of "silently substituting them for text" \[R75\]
 - Precedent: OpenBSD pf macros (text substitution) (rejected; named by author): "without those macros that openbsd uses" \[R36\]
 - Precedent: pfctl rule macros at grammar level (considered; named by author): wants token-stream substitution leaving an expansion marker \[R75\]
-- Evidence: obconf.md:53 "No macros, no includes, no arithmetic, no conditionals"; ABNF.md:347 \`macros \<rule\>\` directive (C only); grammars/README.md:147 "\`macros varset\` and \`includes include\` name the rules whose statements define a macro" \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence; the conflict between the chain and the \`macros\` directive stands
+- Evidence: obconf.md:53 "No macros, no includes, no arithmetic, no conditionals"; ABNF.md:347 \`macros \<rule\>\` directive (C only); grammars/README.md:147 "\`macros varset\` and \`includes include\` name the rules whose statements define a macro" ; the conflict between the chain and the `macros` directive stands
 - Left: details pending: Rust, Zig, Ada and tree-sitter ports of \`macros\` (TODO.md:89); the reading of the two decisions is for the author's veto
+
+### Meta II ideas
+- Status: TO DO — decided, details tbd: the backends become rewrite grammars (latest decision 2026-11-14 \[R710\])
+- Decided: 2026-11-14 decided: the language backends are rewrite grammars chosen by one emitter back end, with `->`, `=>`, `=>>` as the main mechanism and `%emit` kept for smaller things \[R710\] \[R711\]; this is the way the classification and output of a backend come to be written in the notation, the question RFCPLAN.md step 13b left open, answered by rewrite grammars and not by `%emit` blocks that name templates (see Generator pipeline: operations, layouts, languages); earlier: "with rewrite rules etc, the mustache templates are going away" \[R583\]
+- Rationale: "it must feel natural when incorporated, not a bolt on. probably fits with the %scan{} %action{} family" \[R228\]
+- Precedent: META II (considered; named by author): quoted: closing its loop needs classification expressible in the notation \[R228\]
+- Precedent: VALGOL (considered; named by assistant, not taken up): hbnf could reproduce it with a translator backend \[R228\]
+- Evidence: RFCPLAN.md:2312 "13b. Closing META II's loop: the classification in the notation. *Open, and open to argument.* Not scheduled" (a label that predates R608 and R710)
+- Doc differs: RFCPLAN.md step 13b still labels the matter open and describes `%emit` blocks that name templates
+- Left: details tbd: how Analyze, Rule\_Info and the classification are written as rewrite grammars; see Generator pipeline: operations, layouts, languages
 
 ### Parsing model, packrat and parse path
 - Status: TO DO — decided to rewrite grammars to \`/\`; details pending: grammars still mostly use \`\|\` and whether ordered choice is needed at all is open (latest decision 2026-10-29 \[R508\])
@@ -267,7 +261,7 @@
 - Precedent: recursive descent (considered; named by author): hbnf, being recursive descent, does no reductions \[R503\]
 - Precedent: ANTLR / LL(\*) / PEG (considered; named by assistant, not taken up): top-down parsers also have no reductions \[R504\]
 - Precedent: tree-sitter (considered; named by assistant, not taken up): has reductions because GLR-based \[R503\]
-- Evidence: grammars/obconf\_pfctl.hbnf has 294 \` \| \` and 14 \` / \`; RFCPLAN.md:69-99 "\`/\` is ABNF's union ... compiles without backtracking"; README.md:71 "ordered choice \`\|\` could be a union \`/\`, and \`--no-factor\` and \`--no-ladder\`" \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
+- Evidence: grammars/obconf\_pfctl.hbnf has 294 \` \| \` and 14 \` / \`; RFCPLAN.md:69-99 "\`/\` is ABNF's union ... compiles without backtracking"; README.md:71 "ordered choice \`\|\` could be a union \`/\`, and \`--no-factor\` and \`--no-ladder\`"
 - Left: details pending: the rewrite of the grammars from \`\|\` to \`/\` (not done); memoization stays an optimization (no packrat requirement found stated); the question "does hbnf need \`\|\` at all" (2026-10-29 \[R508\]) is open
 
 ### Rule typing and typed values
@@ -277,7 +271,7 @@
 - Precedent: RFC BNF (chosen; named by author): revert the C type prefix to match it \[R104\]
 - Precedent: yacc, EBNF, ABNF (considered; named by author): compared on human comprehension and ease of modification \[R108\]
 - Precedent: yacc (considered; named by author): asked if %scan and %action match what it did \[R108\]
-- Evidence: grammars/obconf\_ntpd.hbnf:44 \`rtable     = "rtable" int\` (no type prefix); README.md:25 "emits a parser and its typed tree in C, Rust, Zig or Ada"; RFCPLAN.md:531 "Semantic values are typed and named"; not found: \`int a = b c d\` syntax \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): uncommitted (other machine): RESUME-9b.md shows typed pointer fields per backend (\`T \*f\`, \`Option\<Box\<T\>\>\`), inferred, still no type prefix
+- Evidence: grammars/obconf\_ntpd.hbnf:44 \`rtable     = "rtable" int\` (no type prefix); README.md:25 "emits a parser and its typed tree in C, Rust, Zig or Ada"; RFCPLAN.md:531 "Semantic values are typed and named"; not found: \`int a = b c d\` syntax
 - Left: details pending: the type prefix and per-rule type declarations; the records do not show whether the 2026-09-24 "revert the c type prefix" was decided; typed semantic values (2026-09-25) are only partly there (typed tree, no per-rule type declarations)
 
 ### Scan and action blocks, predicates and terminology
@@ -285,8 +279,9 @@
 - Decided: 2026-10-18 decided: "remove 'jets' from the docs, from now on there are only 'actions'" plus ad hoc terminology. \[R352\]
 - Rationale: "almost all %scan{} and %action {} blocks should be a single function call or simple expression. keeps the grammar readable to humans" \[R107\]
 - Precedent: angle-bracket \<\> terminals (BNF, RFC 822 uses) (considered; named by assistant, accepted): he builds on \<\> as terminal naming a scanner function \[R267\]
-- Evidence: RFCPLAN.md:154 (decision 8) "one family of three" \`%scan{}\` \`%action{}\` \`%emit{}\`; ABNF.md:183 \`%scan{ … }\`, \`%action{ … }\`; README.md, WHY.md, HISTORY.md, TUTORIAL.md, ABNF.md, METACOMPILERS.md, RFCPLAN.md have no "jet" (re-checked at HEAD 5224390: METACOMPILERS.md:268 now says "scanner action", RFCPLAN.md jet mentions gone) \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): the committed docs still carry the three \`jet\` mentions (METACOMPILERS.md:268, RFCPLAN.md:1787, :2750); uncommitted (other machine): RESUME-9b.md:119 and RESUME-9c.md:15 still say jet/jets (2026-10-05/06, before the 2026-10-18 decision)
+- Evidence: RFCPLAN.md:154 (decision 8) "one family of three" \`%scan{}\` \`%action{}\` \`%emit{}\`; ABNF.md:183 \`%scan{ … }\`, \`%action{ … }\`; README.md, WHY.md, HISTORY.md, TUTORIAL.md, ABNF.md, METACOMPILERS.md, RFCPLAN.md have no "jet" (re-checked at HEAD 5224390: METACOMPILERS.md:268 now says "scanner action", RFCPLAN.md jet mentions gone)
 - Doc differs: grammars/README.md:96 "\*\*Jets\*\* — a rule whose body is hand-written scanner code", :104 "Every jet carries a fallback line", :123 "an inline jet"; tests/bytetest/README.md:106, :111, :112, :136 "action jets", "value jets"; templates/c\_statements.tmpl:8 and :34 comments; templates/c\_rule\_jet.tmpl and \`jet\_\` in hbnf\_c.adb:1133, :3055, :3560 are code names
+- Question for the author: R352 (2026-10-18) says "remove 'jets' from the docs, from now on there are only 'actions'"; his messages of 2026-11-13 use the word again ("any of the keywords that result in jets" \[R701\], "all jet syntax must work for all supported languages" \[R702\]); the ledger records both and decides neither
 - Left: details pending: remove the "jet" mentions in grammars/README.md and tests/bytetest/README.md (and decide whether to rename the code); open potentials (\`%where\` predicates, \`\<foo\>\` terminals, \`%scope\`) are not decided
 
 ### String quote syntax
@@ -294,22 +289,24 @@
 - Decided: 2026-11-03 decided: "we have '' as well as "" why not use '"; "'\\' instead of "\\\\""; "'' is just a special case of "" syntactically, why are you treating it semantically different?" \[R553\]
 - Rationale: "'' is just a special case of \\"\\" syntactically, why are you treating it semantically different?" \[R553\]
 - Rationale: "we have '' as well as \\"\\" why not use '" \[R551\]
-- Evidence: CONTEXTS.md:911-914 "\`'c'\` is \`"c"\` (the user)", "\`'\\'\` for a backslash (the user)"; TODO.md:58 items 1, 2 queued ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: CONTEXTS.md:911-914 "\`'c'\` is \`"c"\` (the user)", "\`'\\'\` for a backslash (the user)"; TODO.md:58 items 1, 2 queued
 - Left: build items 1 and 2 of CONTEXTS.md section 26; how a one-character literal behaves under \`!\`, \`&\` and \`\*\` is pending
 
 ### Up-references and rewrite rules
-- Status: TO DO — details pending: up references are built, silent variants and rewrite rules are not built or benched; 2026-11-10 and 11 added the rewrite stack and the syntax criteria (latest decision 2026-11-11 \[R596\])
+- Status: TO DO — details pending: up references and the rewrite rules `=>`, `=>>`, `->` are built (R686 to R698, in all four backends, with the C-only gaps under Evidence); silent variants, the benchmark on the XML grammar and hygiene (fresh names) are not (latest decision 2026-11-13 \[R693\])
 - Decided: 2026-11-04 decided: "we won't know until we implement and bench. which we will do. no stone unturned. readable AND fast." \[R576\]
 - Rationale: "we won't know until we implement and bench. which we will do. no stone unturned. readable AND fast." \[R576\]
 - Decided: 2026-11-10 decided: rewrites follow the principle that the rules are for human readers, and "the rewrite stack so that we can have helpful error messages attached to the rule that caused the error" \[R591\]; 2026-11-11 decided: choose the rewrite features "closest to the spirit of BNF consistent with what we already have", extended "clear and easy to read" and "as compact as is reasonable" \[R596\]; the rewrites are expected to make the preprocessor fairly straightforward \[R595\]
-- Evidence: a4f96d9 "Up references \`\$K^\` and \`\$K^R\`"; ABNF.md:122 (up reference); TODO.md:46 "Silent variants and rewrite rules (CONTEXTS 26/64): build them and bench them on the XML grammar"; CONTEXTS.md section 25 "a proposal ... nothing built" ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
-- Left: build silent variants and rewrite rules, bench on the XML grammar (TODO.md:134, section 7 question 4, asks the order); keep the chain of rewrites and the original span so an error names the text written and the rule that fired (R591); choose the surface from five options (R596)
+- Decided: 2026-11-11 decided: `->` is the tree rewrite, following ANTLR 3, and `=>` the reread form \[R624\]; 2026-11-13 decided: a rewrite continues, `=>` replacing the matched text and going on reading at the start of the new text, and `=>>` rewinds, reading everything again from the start \[R693\]; 2026-11-14 decided: these rewrites are also the main mechanism of the layout and language transformers of the generator \[R708\] \[R711\]
+- Evidence: a4f96d9 "Up references `$K^` and `$K^R`"; ABNF.md:122 (up reference); the reader (hbnf\_grammar.adb) takes `=>`, `=>>` and `->`, and each backend generates them (`B_Reread` and `B_Tree` in hbnf\_c.adb, hbnf\_rust.adb, hbnf\_zig.adb, hbnf\_ada.adb); tests/consequence.sh; corpus/cobol/cobol-copy.hbnf and corpus/c/cpp.hbnf use them; gaps (Check\_Consequences in hbnf\_compilable.adb): `hiding`, `x in hidden`, a template function in `=>`, a `->` template with a fact or function, and `->` with `layout tape` are generated by C only; C goes on reading in the live parse, while Rust, Zig and Ada start the parse over (R693, R698)
+- Doc differs: CONTEXTS.md heads sections 25 and 30 "nothing built" and CONTEXTS.md:1283 says the two-arrow reading "replaces `=> reread` and `=>>`", which R693 restored; TODO.md "built so far (C only)"; the rewrites are described only for generated parsers, not yet as the mechanism of the generator (see Generator pipeline: operations, layouts, languages)
+- Left: silent variants, and the benchmark on the XML grammar (TODO.md section 7 question 4 asks the order); hygiene, fresh names for rewrites (CONTEXTS.md section 30; `hiding` covers only self-expansion, R694); the rewrite surface on the other backends where C only (see Evidence); keep the chain of rewrites and the original span so an error names the text written and the rule that fired (built in C, R665; R591)
 
 ### Word boundary with string literals
 - Status: TO DO — the boundary defect under \`sensitivity string %i\` is recorded as a known reader/generator defect, not fixed (latest decision 2026-10-21 \[R388\])
 - Decided: 2026-10-21 decided: hbnf word-boundary problem is "insane, it should work with string literals too! fix hbnf". \[R388\]
 - Rationale: "that's insane, it should work with string literals too! fix hbnf" \[R388\]
-- Evidence: CONTEXTS.md:990 "Under \`sensitivity string %i\` keywords have no word boundary ... so \`ID\` matched the front of \`IDREF\`"; CONTEXTS.md:930 item 13 (\`word\` renamed, boundary breaks); TODO.md:64 lists items 13,14,15 as queued ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: CONTEXTS.md:990 "Under \`sensitivity string %i\` keywords have no word boundary ... so \`ID\` matched the front of \`IDREF\`"; CONTEXTS.md:930 item 13 (\`word\` renamed, boundary breaks); TODO.md:64 lists items 13,14,15 as queued
 - Left: fix items 13 and 34 of CONTEXTS.md section 26 so a string literal gets a word boundary without naming \`word\`/\`keywords\`
 
 ## 03 Parser generation and back ends
@@ -318,14 +315,14 @@
 - Status: TO DO — walker, dump, writer, spans/parents were ported, but the Ada "status return" rewrite is not found (latest decision 2026-10-23 \[R396\])
 - Decided: 2026-10-23 approved-proposal: do the Ada "status return" rewrite first \[R396\]
 - Rationale: Port the walker, dump and pretty printer "so people can see how it is done" \[R386\]
-- Evidence: not found: searched README.md, TUTORIAL.md, RFCPLAN.md, hbnf\_ada.adb for a status-return API; templates/ada\_parser\_spec.tmpl:9 still declares \`Parse\_Error : exception;\` and TUTORIAL.md:158 handles \`when E : Parse\_Error\`; ports present: commit 4a20c92 "Writer layout hook in Zig, Rust and Ada", tests/spans/main.{adb,rs,zig} ; recheck: packaging repo: the hbnf aport check() builds only C and Ada backends (SCHEMA\_BACKENDS="c ada") and has no status-return test; uncommitted (other machine): RESUME-9b.md shows the free walk in all four backends but no Ada status-return rewrite
+- Evidence: not found: searched README.md, TUTORIAL.md, RFCPLAN.md, hbnf\_ada.adb for a status-return API; templates/ada\_parser\_spec.tmpl:9 still declares \`Parse\_Error : exception;\` and TUTORIAL.md:158 handles \`when E : Parse\_Error\`; ports present: commit 4a20c92 "Writer layout hook in Zig, Rust and Ada", tests/spans/main.{adb,rs,zig}
 - Left: the Ada status-return (non-exception) rewrite
 
 ### Brace counting
 - Status: TO DO — the author asked for proper brace counting in each of the four languages; statement splitting counts braces, quotes and comments in the C backend only (ABNF.md:347) (latest decision 2026-09-21 \[R39\])
 - Decided: 2026-09-21 decided: "make sure you do proper brace counting for each of the 4 languages" \[R39\]
 - Rationale and precedent: none stated in the sources
-- Evidence: ABNF.md:347 "A statement ends at a newline outside braces, quotes and comments ... C only (the other backends warn and parse the whole file)"; not found: the C/Rust/Zig/Ada round-trip tool the records mean (no astbnf), searched tests/, tools/, ABNF.md ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: ABNF.md:347 "A statement ends at a newline outside braces, quotes and comments ... C only (the other backends warn and parse the whole file)"; not found: the C/Rust/Zig/Ada round-trip tool the records mean (no astbnf), searched tests/, tools/, ABNF.md
 - Left: brace counting in the Rust, Zig and Ada backends (ABNF.md:347 says they warn and parse the whole file); the astbnf round-tripping tool the records mean is gone
 
 ### Build order of the context work
@@ -333,7 +330,7 @@
 - Decided: 2026-11-03 decided: Continue the context work "so we can finish cobol and reduce the c and cobol grammars". \[R529\]
 - Rationale: Continue the context work "so we can finish cobol and reduce the c and cobol grammars" \[R529\]
 - Rationale: "when stage 1 is done, do stage 2; then use it to condense the c and cobol grammars" \[R524\]
-- Evidence: CONTEXTS.md:624 "Order of work (the user, 2026-11-02). Stage 1: islands ... Stage 2: \`=\> grammar(x)\` ... Then use both to condense the C and COBOL grammars"; TODO.md:69 items 27, 30, 31 (islands) and :82 "\`=\>\` as the one arrow ... nothing built"; TODO.md:96 (section 4) "COBOL ... 5 gaps in the scan suite against cobc, 1 in NIST" ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: CONTEXTS.md:624 "Order of work (the user, 2026-11-02). Stage 1: islands ... Stage 2: \`=\> grammar(x)\` ... Then use both to condense the C and COBOL grammars"; TODO.md:69 items 27, 30, 31 (islands) and :82 "\`=\>\` as the one arrow ... nothing built"; TODO.md:96 (section 4) "COBOL ... 5 gaps in the scan suite against cobc, 1 in NIST"
 - Left: islands items 27/30/31, \`=\>\` arrow, switch phases 2 and 3, tree-sitter external scanner for switches, COBOL gaps, then the condensed C and COBOL grammars
 
 ### C standard
@@ -357,15 +354,15 @@
 - Rationale: Wants lessons that "benefit the goal of making hbnf suitable to use to efficiently parse C++ into an ast" \[R348\]
 - Precedent: GLR (considered; named by author): "I'm ok with glr" as a way to add context for parsing C++ \[R342\]
 - Precedent: symbol table lookups (considered; named by author): "I'm ok with symbol table lookups" for C++ context \[R342\]
-- Evidence: RFCPLAN.md:1940-1941 "The C backend stays C99 and C++-clean"; TODO.md:101 "ALGOL 68, C++ grammars: not started"; README.md:21 "grammars for ... C++ (full GLR where they need it)"; not found: a g++ compile test of generated C in tests/ (g++ only in tests/e2e.sh header) ; recheck: uncommitted (other machine): hbnf15.txt:573-893 is the 2026-10-18 C++ discussion (symbol-table lookups, local fork instead of global GLR, \`--forks\`) that the decision cites, but it records no C++ grammar or g++ compile test; packaging repo: no g++ check of generated C in the hbnf aport check()
+- Evidence: RFCPLAN.md:1940-1941 "The C backend stays C99 and C++-clean"; TODO.md:101 "ALGOL 68, C++ grammars: not started"; README.md:21 "grammars for ... C++ (full GLR where they need it)"; not found: a g++ compile test of generated C in tests/ (g++ only in tests/e2e.sh header)
 - Left: the C++ grammar, GLR, typedef context; a test that the C output compiles as C++
 
 ### Emitters
-- Status: TO DO — the standing rule is C first then port, and a long list of C-only features is still unported (latest decision 2026-09-22 \[R46\])
+- Status: TO DO — the standing rule is C first then port \[R46\]; since 2026-11-13 the Rust, Zig and Ada backends carry most of the features that were C only (R686 to R702), the C-only gaps remain, and the design of four hand-written emitters is itself to be replaced (R708 to R710) (latest decision 2026-11-14 \[R710\])
 - Decided: 2026-09-22 decided: "yes of course port the C corrections to the other languages" \[R46\]
 - Rationale and precedent: none stated in the sources
-- Evidence: TODO.md:89 "Port the C-only features to Rust, Zig, Ada, tree-sitter: \`as K\`/\`\$K\`, up references, \`^.rule\`, \`bol\`/\`eol\`, the scanned lookahead, overlay, unwind marks, the arena, the tape captures, the SSE2 loop, the context-set hash"; TODO.md:35 Rust and Zig emit \`compile\_error!\` on the XML grammar ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
-- Left: the unported C features listed in TODO.md section 3; recursion handling in Rust/Zig for the conforming XML grammar
+- Evidence: TODO.md's "Port the C-only features to Rust, Zig, Ada, tree-sitter" item lists `as K`/`$K`, up references, `^.rule`, `bol`/`eol`, the scanned lookahead, overlay, unwind marks, the arena, the tape captures, the SSE2 loop and the context-set hash, a list that predates the ports of 2026-11-11 to 13 (R686, R690, R698 to R702); still C only (Check\_Consequences, Check\_Emits in hbnf\_compilable.adb): `hidden`, `hiding`, a template function in `=>`, a `->` template with a fact or function, `->` with `layout tape`, `choose ... with replacement`; TODO.md: Rust and Zig emit `compile_error!` on the XML grammar
+- Left: the C-only features that remain (see Evidence), and recursion handling in Rust/Zig for the conforming XML grammar; the stopgap rule until the generator pipeline is built (a new feature in C first, in the others when asked) is proposed in LANGUAGES.md, details tbd (see Generator pipeline: operations, layouts, languages)
 
 ### Error messages
 - Status: TO DO — line, column and offset in every message are built, but the end point of a long construct is not (latest decision 2026-10-21 \[R384\])
@@ -374,7 +371,7 @@
 - Rationale: "err messages shoould also have line numbers and offsets, sed compatible" \[R384\]
 - Precedent: sed (chosen; named by author): line numbers and offsets in messages "sed compatible" \[R384\]
 - Precedent: ALGOL 60 (considered; named by author): example: a missing "end" should show the unterminated begin \[R381\]
-- Evidence: RFCPLAN.md:1635 "every message now begins \`LINE:COLUMN:OFFSET:\`"; RFCPLAN.md:1637 "a conf reader prints \`file:LINE:COLUMN:OFFSET: ...\`.  Not yet: an end point for a construct that ..."; tests/errors.sh ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: RFCPLAN.md:1635 "every message now begins \`LINE:COLUMN:OFFSET:\`"; RFCPLAN.md:1637 "a conf reader prints \`file:LINE:COLUMN:OFFSET: ...\`.  Not yet: an end point for a construct that ..."; tests/errors.sh
 - Left: beginning and ending point for errors spanning more than a couple of lines (unterminated begin/end), per the 2026-10-21 decision \[R381\]
 
 ### Error messages and reporting
@@ -388,8 +385,19 @@
 - Precedent: yacc/bison (considered; named by author): end goal: on par, but better and more modern \[R142\]
 - Precedent: OpenBSD daemons (chosen; named by author): test cases as drop-in replacements \[R142\]
 - Precedent: gcc error recovery productions (considered; named by author): asked for explanation \[R449\]
-- Evidence: ABNF.md:176 "generation stops with \`file:line:col: not written yet, in \`rule\`: \<...\>\`, the line, a caret under it, and what it probably means"; RFCPLAN.md:180 caret under the line; TODO.md:85 "Error recovery and restarts, with the Common Lisp restart system as the model (idea; not started)"; README.md:20 "error recovery" under Next ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: ABNF.md:176 "generation stops with \`file:line:col: not written yet, in \`rule\`: \<...\>\`, the line, a caret under it, and what it probably means"; RFCPLAN.md:180 caret under the line; TODO.md:85 "Error recovery and restarts, with the Common Lisp restart system as the model (idea; not started)"; README.md:20 "error recovery" under Next
 - Left: error recovery and restarts (RFCPLAN.md step 8, "opt-in")
+
+### Generator pipeline: operations, layouts, languages
+- Status: TO DO — decided, details tbd; none of it is built (latest decision 2026-11-14 \[R712\])
+- Decided: 2026-11-14 decided: the pipeline goes from the front end, which creates "the 40 operations", to the layout transformer, a rewrite grammar, and then to the backend language transformer, also a rewrite grammar \[R708\]; a layout is a rewrite grammar over the IR that decides its output form \[R709\]; `languages/` holds one rewrite grammar per target language, ONE emitter back end chooses it where it now chooses a set of Mustache templates, and this replaces the Mustache templates and the per-language Ada emitters \[R710\]; the main mechanism of both transformers is the rewrite rules `->`, `=>`, `=>>`, while `%emit` is neither deprecated nor forbidden and stays for the smaller things it was made for \[R711\]; the layout and language grammars may be compiled to `.o` files and linked in, and need not run interpreted \[R712\]
+- Decided: earlier rows it extends: the templates become hbnf, "renamed languages" \[R608\]; a language is `languages/<lang>/` that hbnf itself loads as a `.o` \[R703\]; in `languages/` the hbnf files do what grammar rewrites can and the rest is `.o` files that hbnf links in \[R704\]; "with rewrite rules etc, the mustache templates are going away" \[R583\]; for the generator this supersedes "the ast is the ir" \[R3\] (the AST is what a generated parser builds, the IR is what the generator passes between its stages)
+- Rationale: layouts are already hbnf, so "the complexity cost is already paid" \[R608\]
+- Evidence: not built, checked in the tree: there is no `languages/` directory; there is no type or file for the operations (the nearest enumeration, `Block_Op` in hbnf\_grammar.ads, has 27 members that are constructs of the notation, not lowered operations; the prose list of about forty is in LANGUAGES.md); hbnf.adb (lines 657 to 703) chooses the backend with a string if-chain over tree-sitter, c, rust, zig and ada
+- Evidence: nine hand-written Ada emitters (wc -l): hbnf\_c.adb 13,122 lines, hbnf\_ada.adb 7,149, hbnf\_zig.adb 6,224, hbnf\_rust.adb 5,446, hbnf\_wire-ada\_lang.adb 2,643, hbnf\_wire-zig.adb 1,985, hbnf\_wire-rust.adb 1,802, hbnf\_wire-c.adb 1,759, hbnf\_tree\_sitter.adb 1,844; templates/ holds 71 Mustache files that carry prologues, type declarations and the parse entry, while the per-rule parser logic is Ada string building (hbnf\_c.adb has about 2,240 `Append (` calls)
+- Evidence: layouts/ holds `rb/` and `tailq/`, each a `layout.hbnf` of raw C list operations (`layout_ops` with `@name@` holes) read only by the C backend, with no rewrite rule in either; the `ast` and `tape` layouts are Ada (`Tape_Layout` in hbnf\_grammar.adb, which writes `%emit` blocks); the rewrite rules `=>`, `=>>`, `->` run only inside generated parsers, never on the generator's own IR, and the generator has no interpreter for rewrite rules or grammars
+- Doc differs: documents written before 2026-11-14 describe four emitters and Mustache templates as the architecture (README.md, USENIXSUBMISSION.md, HISTORY.md); RFCPLAN.md step 13b describes a backend as a schema of `%emit` blocks that name templates, which R711 reads as not the mechanism the author envisioned; decisions-and-status.md itself said "no separate IR stage" (Ast as ir); LANGUAGES.md records the implementer's proposal for how hbnf loads a language, which is not a decision (R712 leaves it details tbd)
+- Left: details tbd: the exact list of the operations (LANGUAGES.md counts about forty from the emitters); how the stages are connected; how a language directory is laid out beyond R703 and R704; whether layouts nest under languages (R614); how `ast` and `tape` become layout directories; whether hbnf loads the `.o` files at run time or links them at build time; the order of the work (LANGUAGES.md proposes steps, and R703 puts the C preprocessor first)
 
 ### LR, left recursion, GLR and match strategy
 - Status: TO DO — direct left recursion and no shift/reduce conflicts are built; the "heavier stuff when needed" (GLR) is not started (latest decision 2026-10-18 \[R343\])
@@ -402,10 +410,17 @@
 - Precedent: yacc, EBNF and ABNF (considered; named by author): compared on human usability and ease of modification \[R108\]
 - Precedent: ANTLR (considered; named by assistant, not taken up): assistant said it handles indirect left recursion \[R168\]
 - Precedent: IMP72 (considered; named by assistant, not taken up): semantic arbitration of ambiguity, no full GLR everywhere \[R343\]
-- Evidence: ABNF.md:158 "Direct left recursion ... read as a loop ... Indirect left recursion is refused"; CONTEXTS.md:22 "GLR ... allowed by the scope note, pay only for what is used; not started"; TODO.md:86 "GLR ... not started"; WHY.md:7 shift/reduce conflicts as an LR artifact ; recheck: uncommitted (other machine): hbnf15.txt:629,801-893 keeps GLR "as a possible later escape hatch" and prefers local fork over global GLR (the --forks option in hbnf.old's usage), consistent with the decision; GLR itself is still not built
+- Evidence: ABNF.md:158 "Direct left recursion ... read as a loop ... Indirect left recursion is refused"; CONTEXTS.md:22 "GLR ... allowed by the scope note, pay only for what is used; not started"; TODO.md:86 "GLR ... not started"; WHY.md:7 shift/reduce conflicts as an LR artifact
 - Left: GLR for C++ and ALGOL 68; indirect left recursion still refused
 
 ## 04 Wire layer and bit rules
+
+### Layout grammar for opcodes and charts
+- Status: TO DO — decided in outline, details pending: no opcode/layout-chart grammar or svg emitter exists (latest decision 2026-11-11 \[R603\])
+- Decided: 2026-11-11 decided: the simulator also uses hbnf output for opcode generation; its semantics stay by hand, hbnf only parses the binary opcodes into the structs \[R603\]; "the one grammar matches the opcodes and the bit layouts, but what is emitted can be either the assembler/linker or the svg charts." \[R581\]; 2026-11-14 decided: a layout is a rewrite grammar over the IR \[R709\]
+- Rationale: "this is the type of application where \"rewrite rules\" and \"text transforms\" come into their own in hbnf." \[R582\]
+- Evidence: not found: searched TODO.md, CONTEXTS.md, README.md, RFCPLAN.md for svg, chart, opcode
+- Left: details pending: which mechanism writes the svg charts (R582 names the rewrite rules, which are built for generated parsers, R686 to R698; `%emit` with prologue and epilogue C is also available, R711); the grammar and the emitter
 
 ### Slice syntax for strings and bits
 - Status: TO DO — details pending: \`name:N\` and \`name@K:N\` slices of bit fields are built and \`name:bitsof(rule)\` spells text words as bits, but \`@Off:Len\` on strings and the unit suffixes (\`b\`, \`B\`, \`c\`, \`W\`) are not built (latest decision 2026-10-18 \[R350\])
@@ -413,7 +428,7 @@
 - Rationale: "we do need to distinguish bits from bytes from codepoints, and some platforms had different word sizes." \[R317\]
 - Rationale: "@Off:Len syntax shoudl work on strings too." \[R316\]
 - Rationale: Prefers a cleaner syntax "especially if there is historical precedent" \[R339\]
-- Evidence: WIRE.md:15 \`ipv4 = version@0:4 ihl:4 ...\` and WIRE.md:130 \`name@K:N\`; \`words:bitsof(phrase)\` is what spells text words as bits (RFCPLAN.md:1316 "replaced by \`name:bitsof(rule)\`"); WIRE.md:341-347 still presents \`@Off:Len\` slicing of strings and units as "The design" ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: WIRE.md:15 \`ipv4 = version@0:4 ihl:4 ...\` and WIRE.md:130 \`name@K:N\`; \`words:bitsof(phrase)\` is what spells text words as bits (RFCPLAN.md:1316 "replaced by \`name:bitsof(rule)\`"); WIRE.md:341-347 still presents \`@Off:Len\` slicing of strings and units as "The design"
 - Doc differs: RFCPLAN.md:1331 "\`foo:4\` is 4 units and \`foo@1:4\` is 4 units at offset 1" (offset after \`@\`, length after the colon), and WIRE.md:341-347 "The design" (unit suffixes, \`@Off:Len\` on strings) is written as a design not built; the notation of the decision is \`:bits@offset\`
 - Left: pending: whether string slices with a unit suffix (\`name@4B:4B\`) get built and the final order of length and offset; the "N bits at a time" file width (\`byte 9\`, \`word 18\`, RFCPLAN.md:1353) is marked "decisions still to be taken"
 
@@ -421,7 +436,7 @@
 - Status: TO DO — no imsg wire grammar exists; only prose about imsg in IDREF.md and USENIXSUBMISSION.md (latest decision 2026-09-22 \[R58\])
 - Decided: 2026-09-22 decided: "magic numbers in headers should be explict, not comments" \[R58\]
 - Rationale and precedent: none stated in the sources
-- Evidence: not found: searched grammars/, tests/wire/, tests/daemons/ for an imsg grammar (hits only IDREF.md:125 \`emit(IMSG\_NODE ...)\` and USENIXSUBMISSION.md:76); WIRE.md has no imsg section ; recheck: packaging repo: ada-on-alpine/testing/imsg-ada and README.md:134 package imsg-ada, the OpenBSD imsg message-passing library in Ada, which is a library and not an hbnf wire grammar with explicit magic numbers; no imsg grammar in the uncommitted files either
+- Evidence: not found: searched grammars/, tests/wire/, tests/daemons/ for an imsg grammar (hits only IDREF.md:125 \`emit(IMSG\_NODE ...)\` and USENIXSUBMISSION.md:76); WIRE.md has no imsg section
 - Left: an imsg header grammar with explicit magic numbers as the binary-protocol test case
 
 ## 05 Templates and output
@@ -430,12 +445,13 @@
 - Status: TO DO — no optimisation step for emitting only used tokens and rules is found (latest decision 2026-10-06 \[R245\])
 - Decided: 2026-10-06 decided: Write points 1 to 5 "as an optimization step at the end of rfcplan"; "emitted code should only care about tokens/rules that are used, not any that aren't" \[R245\]
 - Rationale and precedent: none stated in the sources
-- Evidence: not found: searched RFCPLAN.md (last step is 20, COBOL/ALGOL 68/C++, at line 2760) for such a step; only the general policy at RFCPLAN.md:2769 "nothing is paid for unused" and commit d1fd743 (a rule used only in a lookahead was left out, a bug fix) ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: not found: searched RFCPLAN.md (last step is 20, COBOL/ALGOL 68/C++, at line 2760) for such a step; only the general policy at RFCPLAN.md:2769 "nothing is paid for unused" and commit d1fd743 (a rule used only in a lookahead was left out, a bug fix)
 - Left: write the five points as the final RFCPLAN step and implement dropping unused tokens and rules in the emitters
 
 ### Mustache templating in the emitters
-- Status: TO DO — details pending: the templates are to go away with rewrite rules; the repository still renders them with its own Mustache package and rewrite rules are unbuilt (latest decision 2026-11-05 \[R583\])
+- Status: TO DO — decided, details tbd: the templates are to be replaced by the language grammars (R583, R608, R710); the repository still renders 71 templates with its own Mustache package, and the rewrite rules that are to replace them are built for generated parsers but not applied to the generator (latest decision 2026-11-14 \[R710\])
 - Decided: 2026-11-05 decided: With rewrite rules etc, "the mustache templates are going away"; asks whether hbnf already uses its own built-in mustache. \[R583\]
+- Decided: 2026-10-29 decided: the templates become hbnf, "renamed languages" \[R608\]; 2026-11-14 decided: `languages/` holds one rewrite grammar per target language, chosen by ONE emitter back end where it now chooses a set of Mustache templates, replacing the templates and the per-language Ada emitters \[R710\] (see Generator pipeline: operations, layouts, languages)
 - Rationale: "hbnf should be using mustache on the backend by now" \[R233\]
 - Rationale: "mustache is provided by mustache-ada that is the canonical source and we must use it" \[R223\]
 - Rationale: accepted from the assistant: Mustache style is right to eliminate the ~200 \`Append\` calls and enforce a functional style in Ada \[R153\]
@@ -444,8 +460,8 @@
 - Precedent: mustache-ada (chosen; named by author): his own Ada port, canonical source, must be used \[R223\]
 - Precedent: \${} and \$\$ templating (rejected; named by assistant, accepted): never fully specified; Mustache-style preferred \[R153\]
 - Precedent: rewrite rules (chosen; named by author): will replace the mustache templates \[R583\]
-- Evidence: commit f1ab596 "rendered by hbnf's own Mustache package; mustache-ada is no longer a dependency" (the built-in answer); hbnf\_template.ads, grammars/template.hbnf; README.md:15-16 "the project's own Mustache package, \`HBNF\_Template\`"; CONTEXTS.md:824 rewrite rules "a sketch, not accepted by any reader"; CONTEXTS.md:1029 item 64 (to be built and benched) ; recheck: packaging repo: ada-on-alpine/testing/hbnf/APKBUILD pins cd94a16 (2026-10-22) and says "the code templates are rendered by mustache-ada" with depends=mustache-ada, build.sh and README.md still chain mustache-ada -\> hbnf; that is older than f1ab596 (2026-10-31, own Mustache package), so it is stale packaging, not a reversal; rewrite rules still unbuilt, templates still in use
-- Left: build rewrite rules and retire the templates/ directory; the 2026-10-31 memory blowup of mustache is not mentioned in TODO.md
+- Evidence: commit f1ab596 "rendered by hbnf's own Mustache package; mustache-ada is no longer a dependency" (the built-in answer); hbnf\_template.ads, grammars/template.hbnf; README.md:15-16 "the project's own Mustache package, \`HBNF\_Template\`"; the rewrite rules are built for generated parsers (R686 to R698) but not applied to the generator; templates/ holds 71 files, 45 of them C's
+- Left: details tbd: replace the templates and retire templates/ by the language grammars (see Generator pipeline: operations, layouts, languages); the 2026-10-31 memory blowup of mustache is not mentioned in TODO.md
 
 ## 06 Testing and conformance
 
@@ -455,14 +471,14 @@
 - Rationale and precedent: none stated in the sources
 - Evidence: 4a796e4 (2026-11-05) "Benchmark: every stage of bench/run.sh again"; TODO.md:19-28 reruns on a quiet machine pending
 - Doc differs: TODO.md:14-16 says everything was rerun on 2026-11-05 on a busy machine; no doc states an xml-only bench rule
-- Evidence: searched uncommitted (other machine) RESUME-9b.md, HISTORY.draft.md: no xml-only bench rule
+- Evidence: not found: no xml-only bench rule in any document of the repository
 - Left: pending: whether "only the xml benchmarks" is a one-time scope or a standing rule, and where it is written down (no doc states it)
 
 ### Benchmark results and reporting
 - Status: TO DO — benchmark results are rerun and published, but the per-backend, per-arch, per-grammar, per-suite reporting is not built (latest decision 2026-10-27 \[R459\])
 - Decided: 2026-10-27 decided: Wants "the latest benchmark results" on how much the hidden and simd changes sped things up. \[R459\]
 - Rationale: "so we can track progress at a reasonably fine grained level, say, per backend language, per cpu arch, per grammar, per test suite." \[R456\]
-- Evidence: commits 4a796e4, c4d9370, 4d2f65a (benchmarks rerun, 2026-11-05); bench/results/; tests/check.sh:3 "per backend where a suite names them"; TODO.md:87 "Granular check reporting: per-item results (backend / arch / grammar / suite), sequential, easy to run one item" ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: commits 4a796e4, c4d9370, 4d2f65a (benchmarks rerun, 2026-11-05); bench/results/; tests/check.sh:3 "per backend where a suite names them"; TODO.md:87 "Granular check reporting: per-item results (backend / arch / grammar / suite), sequential, easy to run one item"
 - Left: granular check reporting; a quiet-machine rerun (TODO.md section 1)
 
 ### Benchmark runs and rebuilds
@@ -478,7 +494,7 @@
 - Rationale: "seems kind of spendy when a few choice tests could reassure us enough; tired of work being interrupted for these expensive checks when some light checks would do" \[R570\]
 - Rationale: "don't rerun the checks/benches till the correctness work is done" \[R575\]
 - Evidence: TODO.md:19-28 reruns pending; tests/check.sh runs only stale slices
-- Evidence: searched uncommitted (other machine) files and packaging repo: no rule beyond TODO.md
+- Evidence: not found: no rule beyond TODO.md in this repository or the packaging repo
 - Left: the rule is stated only in part (TODO.md:19-28 says reruns wait for a quiet machine, not for the correctness work); write the author's rule where the sessions read it
 
 ### Debug policy
@@ -486,7 +502,7 @@
 - Decided: 2026-10-09 decided: "whenever you hit a bug, do a little digging then search the bug trackers for similar stuff" \[R293\]
 - Precedent: Debian bug report system (chosen; named by author): search for known issue with gnat 15.2 \[R292\]
 - Evidence: not found: searched README.md, TODO.md, STYLE.md for a debugging or bug-tracker policy
-- Evidence: searched uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md and packaging repo README.md, tools/README.md: no debugging or bug-tracker policy
+- Evidence: not found: no debugging or bug-tracker policy in the packaging repo README.md or tools/README.md either
 - Left: write the rule into the project instructions (README.md, TODO.md and STYLE.md do not state it)
 
 ### XML benchmark, speed and conformance
@@ -522,7 +538,7 @@
 - Rationale: "hbnf\_sum.h ... is opaque, each function should get it's own .h file, sha256.h crc.h etc" \[R331\]
 - Evidence: 15383d6 "lib/: one header for each function"; 0cc3bc0 deleted lib/\*.h; corpus/bip39/bip39.h remains
 - Doc differs: RFCPLAN.md:1281-1282 "by their own names, with corpus/bip39/bip39.h using SHA256"; no lib/ directory at HEAD
-- Evidence: searched uncommitted (other machine) lib-hbnf/ (only .ali files and libhbnf.a), obj-\*/ and the packaging repo: no per-function .h files
+- Evidence: not found: no per-function .h files in the repository or the packaging repo
 - Left: pending: which per-function headers the generated parsers include (the system's \`\<zlib.h\>\` and \`\<openssl/sha.h\>\` read as per-function headers by their own names, or hbnf-owned sha256.h/crc.h as in 15383d6) and where they are named in the docs
 
 ### Which hbnf version to use
@@ -543,21 +559,21 @@
 - Decided: 2026-09-21 approved-proposal: "yes, include it, it is an awesome demo of astbnf at work" \[R11\]
 - Rationale and precedent: none stated in the sources
 - Evidence: not found: grep astbnf finds nothing; searched tutorial/, README.md, TUTORIAL.md for a demo of that name
-- Evidence: searched uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, hbnf15.txt and packaging repo README.md for astbnf: no match
+- Evidence: not found: no astbnf in the repository or the packaging repo README.md
 - Left: pending: identify the demo (the grammar astbnf used to emit Ada, to be written to sources/astbnf/tests/hbnf.astbnf; hbnf\_schema.hbnf and grammars/template.hbnf are the nearest files) and name it in the docs
 
 ## Relation to imp72, pcc and other projects
 
 ### Algol68 hbnf
-- Status: TO DO — not started; since 2026-11-11 a target again, after COBOL, the C preprocessor and before C++; no algol68 corpus directory (latest decision 2026-11-11 \[R598\])
+- Status: TO DO — not started; since 2026-11-11 a target again; no algol68 corpus directory (latest decision 2026-11-11 \[R598\])
 - Decided: 2026-10-18 decided: "I do want an hbnf grammar that fully specifies algol68"; "%where predicates are a fundamental part of hbnf" \[R362\]; 2026-10-22 decided: "defer c++ and algol68 to \\"far in the future\\"" \[R391\], superseded 2026-11-11: the handoff to the implementer names "the c plus plus twenty three spec with pre processor and also algol68", with a soft limit of 5,000 lines of grammar and epilogue per grammar \[R598\] \[R600\]
 - Rationale: "%where predicates are a fundamental part of hbnf"; "I do want an hbnf grammar that fully specifies algol68" \[R362\]
 - Precedent: W-grammar (considered; named by author): asked how W-grammar handled what %where predicates do \[R362\]
 - Evidence: corpus/README.md:23 "\`algol68/\` \| the Revised Report's W-grammar \| not started; on the list (\`RFCPLAN.md\` step 20)"; TODO.md:101 "ALGOL 68, C++ grammars: not started"; RFCPLAN.md:38-39 "algol68 to far in the future"; on the list since 2026-10-31 as step 20 (RFCPLAN.md:2760); metarules \`::=\` and hyperrules \`:=\` exist (ABNF.md:353)
-- Left: write the algol68 grammar (needs the W-grammar facilities, partly built as parameterised rules, and facts); order set in the plan of 2026-11-11: COBOL, the C preprocessor, ALGOL 68, then C++
+- Left: write the algol68 grammar (needs the W-grammar facilities, partly built as parameterised rules, and facts, which are built); order: the repository documents give COBOL to a full front end, the C preprocessor, ALGOL 68, then C++ one standard at a time (RFCPLAN.md step 20, labelled "the user's plan, 2026-11-11"); the handoff text of that day recorded another: the core engine (context sets, emit/where/bind, the rewrite surface, set-logic operators), then COBOL applied and measured, fixed format and COPY/REPLACE, C++23 with the preprocessor as rewrites, ALGOL 68, the older C++ versions; the author's quoted messages of that day give no order, so the order is details tbd
 
 ### C and C++ grammars and compiler
-- Status: TO DO — COBOL was factored and C factoring is done by the generator; the C++ grammars and the preprocessor are not started (latest decision 2026-11-11 \[R599\])
+- Status: TO DO — COBOL was factored and C factoring is done by the generator; the C preprocessor grammar exists (corpus/c/cpp.hbnf, C backend only) and the C++ grammars are not started (latest decision 2026-11-11 \[R599\])
 - Decided: 2026-11-03 decided: "factor the fuck out of cobol and c" while continuing the triage. \[R530\]; 2026-11-11 decided: complete coverage of the C++ standard, a complete front end including the C++ preprocessor, one grammar per C++ version ("the farther back in time you go, the easier they will be to parse"), the Annex A surface style approved, and about 5,000 lines of grammar and epilogue per grammar as a soft limit \[R594\] \[R595\] \[R599\] \[R600\]
 - Rationale: "unlike the pcc project we don't care about the different arches, and we don't have to worry about c89 or k&r c so the whole corpus of c files should be usable for testing" \[R405\]
 - Rationale: "what is wrong with 17 nested rules? i liked your earlier plan just now of starting with a small c compiler" \[R401\]
@@ -566,12 +582,12 @@
 - Precedent: gcc and clang (considered; named by author): speed to beat \[R405\]
 - Precedent: W-grammar (considered; named by author): possible way to compact C and C++ grammars \[R405\]
 - Precedent: IMP72 rewrite rules and %emit templates (considered; named by assistant, not taken up): needed for the back half of the compiler \[R402\]
-- Evidence: commit 146c138 "COBOL: 44 gaps; the grammar factored (4.6% fewer characters) with the same verdict on all 1,572 programs"; corpus/c/README.md:67 "alternatives that begin alike read that beginning once (\`tests/factor.sh\`, \`--no-factor\`)"; TODO.md:43 "automatic left-factoring through captures (26/48)" still open
-- Doc differs: TODO.md:101 "ALGOL 68, C++ grammars: not started"; the C preprocessor grammar is not built (RFCPLAN.md:2757)
-- Left: the C preprocessor (on the C grammars first, from the source stack that COBOL's COPY and REPLACE need), then a C++ grammar per standard, oldest first; the plan of 2026-11-11
+- Evidence: commit 146c138 "COBOL: 44 gaps; the grammar factored (4.6% fewer characters) with the same verdict on all 1,572 programs"; corpus/c/README.md:67 "alternatives that begin alike read that beginning once (\`tests/factor.sh\`, \`--no-factor\`)"; TODO.md:43 "automatic left-factoring through captures (26/48)" still open; corpus/c/cpp.hbnf (1,407 lines; by its own header about 1,190 are native C in two blocks and about 215 grammar) with corpus/c/cpp-gnu.hbnf (2,962 lines of gcc tables, generated), rows R692 to R707, tests/cpp.sh (C backend only; 21 program/expected pairs and more); `one of` is built (R661) while `opt`, `X-seq` and `X-list` are not
+- Doc differs: TODO.md "ALGOL 68, C++ grammars: not started" is right for C++; the C preprocessor grammar is built, which RFCPLAN.md step 20 ("an idea, not decided") and README.md ("Next") do not say; cpp.hbnf's header says "about 120 lines" of native C against its own count of about 1,190; "oldest first" in the plans is not in the author's quoted words (R599 gives the theory that older standards are easier, not an order)
+- Left: a C++ grammar per standard, C++23 as the completeness reference; the Annex A surface forms approved in R594 (`opt`, `X-seq`, `X-list`, the superset annotation; R651 keeps `[b]` as the optional spelling) are decided, details tbd; the 5,000-line soft limit is per grammar \[R600\], and whether the generated tables or the native C count toward it is details tbd; the Rust, Zig and Ada backends refuse `hidden`, `hiding` and template functions, which cpp.hbnf uses; order: the repository documents give COBOL to a full front end, the C preprocessor, ALGOL 68, then C++ one standard at a time (RFCPLAN.md step 20, labelled "the user's plan, 2026-11-11"); the handoff text of that day recorded another: the core engine (context sets, emit/where/bind, the rewrite surface, set-logic operators), then COBOL applied and measured, fixed format and COPY/REPLACE, C++23 with the preprocessor as rewrites, ALGOL 68, the older C++ versions; the author's quoted messages of that day give no order, so the order is details tbd
 
 ### COBOL grammar
-- Status: TO DO — the free-format core exists and the koopa and proleap sets were looked at; 2026-11-11 the target became a full front end for old and modern dialects (latest decision 2026-11-11 \[R602\])
+- Status: TO DO — the free-format core, the fixed format and a first slice of COPY and REPLACE exist; the target is a full front end for old and modern dialects (latest decision 2026-11-11 \[R602\])
 - Decided: 2026-11-03 decided: After committing, "do koopa and proleap sets"; asks why gnucobol fails some of the 9708 tests. \[R540\]; 2026-11-11 decided: a full cobol front end, "including old and modern Dialects of cobol", and full coverage of the GnuCOBOL corpus \[R602\]
 - Rationale: "we need to be able to represent these languages in a compact, idiomatic way so it looks as much like pure bnf as possible." \[R515\]
 - Rationale: "we can do full glr; remember the policy, we only pay for what we use." \[R515\]
@@ -580,16 +596,16 @@
 - Precedent: GnuCOBOL (cobc, its test suite) (considered; named by author): asks why gnucobol fails some of the 9708 tests \[R540\]
 - Precedent: Koopa test sources (chosen; named by assistant, accepted): "do koopa and proleap sets" \[R540\]
 - Precedent: ProLeap COBOL parser test sources (chosen; named by assistant, accepted): "do koopa and proleap sets" \[R540\]
-- Evidence: corpus/cobol/README.md:49 "The ProLeap and Koopa test sources were looked at and add nothing"; tests/cobol/scan-baseline.txt, nist-baseline.txt
+- Evidence: corpus/cobol/README.md:49 "The ProLeap and Koopa test sources were looked at and add nothing"; corpus/cobol/ holds 792 lines (cobol.hbnf 438, cobol-copy.hbnf 178 of which 161 are native C, cobol-fixed.hbnf 49, cobol-words.hbnf 65, reserved.hbnf 62); the baselines in tests/cobol/ are scan-baseline.txt 2, nist-baseline.txt 0 and fixed-baseline.txt 1; fixed format generates in all four backends (tests/column.sh); COPY and REPLACE are `=>` rewrites in the C backend only (R691)
 - Doc differs: corpus/cobol/README.md:8 "vendor extensions are left out", the chain's challenge about vendor forms is not settled in the code
-- Left: the 5 scan and 1 NIST baseline gaps; fixed format (waits for `col`); COPY and REPLACE as rewrites over a source stack (R597 asks what COBOL's COPY REPLACING teaches: locality); remaining statements, object-oriented COBOL, PICTURE; the embedded languages as islands
+- Left: the 2 scan gaps and the 1 fixed-format NIST gap (NC205A, a word cut across a continuation line); conditional compilation (`>>IF`), `>>SOURCE FORMAT` switching, COPY between arbitrary tokens and with the fixed format, COPY and REPLACE on the other backends; remaining GnuCOBOL statements (no inventory beyond the scan gaps), object-oriented COBOL, vendor extensions, PICTURE; the embedded languages as islands; R597 asks what COBOL's COPY REPLACING teaches (locality; applied in cobol-copy.hbnf); order: the repository documents give COBOL to a full front end, the C preprocessor, ALGOL 68, then C++ one standard at a time (RFCPLAN.md step 20, labelled "the user's plan, 2026-11-11"); the handoff text of that day recorded another: the core engine (context sets, emit/where/bind, the rewrite surface, set-logic operators), then COBOL applied and measured, fixed format and COPY/REPLACE, C++23 with the preprocessor as rewrites, ALGOL 68, the older C++ versions; the author's quoted messages of that day give no order, so the order is details tbd
 
 ### Build files, project.conf and native code outside the grammar
 - Status: TO DO — decided in outline on 2026-10-29 and 30; nothing built (`languages/`, `builders/`, `project.conf`, `hbnfversion` do not exist) (latest decision 2026-10-30 \[R618\])
 - Decided: 2026-10-29 decided: the templates become HyperBNF, "renamed languages" \[R608\]; helper code lives in `.c` or `.rs` files that the grammar names, as C23's `#embed` does \[R609\]; hbnf chooses which code goes in which files and writes a makefile and a configure file with them, so they stay current with the grammar \[R610\] \[R612\]; a `build` directive with options (standalone, makefile, cmake, cargo) \[R611\]; each build grammar in `builders/`, language-specific parts under `languages/`, mixed-language and mixed-binary builders at the top \[R613\] \[R614\] \[R615\]; a grammar for the project's own `project.conf`, saying which grammars emit what files and how they are compiled and run afterward \[R616\]; installed under /usr/share and overridable in each project directory \[R617\]; an `hbnfversion` directive \[R618\]
 - Rationale: semantic analysis \"was always assumed to be code outside the grammar\", in the epilog or a `.o` file linked in \[R619\]
 - Evidence: not found: no `languages/` or `builders/` directory, no `build` or `hbnfversion` directive in `hbnf_grammar.adb`; islands (`include \"f\" as x`) are the one built way for grammars to interact (CONTEXTS section 19); `HBNF_Template` renders the templates
-- Left: the plan of 2026-11-11, Phase 7: templates as languages, the `build` directive and builders, `project.conf` for several grammars and the native object files they link, `hbnfversion`
+- Left: the templates as languages are the subject Generator pipeline: operations, layouts, languages (R608, R703, R704, R708 to R712); here: the `build` directive and builders, `project.conf` for several grammars and the native object files they link, `hbnfversion` (the plan of 2026-11-11 named in earlier versions of this entry, Phase 7, is not in the repository)
 
 ### Buildabook hbnf
 - Status: TO DO — the overlay builds buildabook and mustache-ada against an old hbnf pin, not the latest; hbnf has since dropped mustache-ada and fixed libhbnf.gpr, so the overlay is stale (latest decision 2026-10-23 \[R395\])
@@ -675,7 +691,7 @@
 - Evidence: not found: searched the hbnf clone for pdp64/opcode/ISA grammars (none; hbnf only provides the tool)
 - Left: the "skip hbnf for now" versus "use the hbnf grammar" decisions (2026-10-21) are superseded by the 2026-11-04 decision; whether the pdp64 repository now follows it is pending there
 
-# Left in the air (27)
+# Left in the air (23)
 
 - Only ideas, open questions, conflicting decisions, or points the record and the repository do not settle.
 
@@ -693,7 +709,7 @@
 - Decided: no standing decision (only potential decisions)
 - Rationale and precedent: none stated in the sources
 - Evidence: not checked: the telegram bot is another project; hbnf has no telegram grammar (grep over grammars, corpus finds none)
-- Evidence: searched uncommitted (other machine) hbnf15.txt, packaging repo: no telegram grammar
+- Evidence: not found: no telegram grammar in the repository or the packaging repo
 - Left: whether hbnf generates the telegram parser
 
 ### Work strategy: which models for which work
@@ -710,7 +726,7 @@
 - Decided: no standing decision (only potential decisions)
 - Precedent: tree-sitter (considered; named by author): asked whether hbnf should become a tree-sitter with extended abnf syntax \[R213\]
 - Precedent: ABNF (considered; named by author): as the syntax of such a tree-sitter \[R213\]
-- Evidence: hbnf\_tree\_sitter.ads/.adb exist; tests/treesitter.sh; commits 602541b, e133141 (tree-sitter scanner work 2026-10-19) \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no decision found; hbnf15.txt and HISTORY.draft.md are AI research text on tree-sitter and PEG, not author decisions
+- Evidence: hbnf\_tree\_sitter.ads/.adb exist; tests/treesitter.sh; commits 602541b, e133141 (tree-sitter scanner work 2026-10-19)
 - Left: whether hbnf should become "a tree-sitter with an extended abnf syntax" was never decided
 
 ## 02 Notation and grammar design
@@ -721,28 +737,28 @@
 - Precedent: ABNF (considered; named by author): asked why hbnf lacks them \[R42\]
 - Precedent: printf format specifiers (considered; named by author): said %d %x %b resemble them \[R43\]
 - Precedent: int16 int32 hexint decint octint (considered; named by author): readable identifiers as the alternative \[R43\]
-- Evidence: ABNF.md:174 "%b/%d/%o/%u/%x, ranges ✓ in \`dialect abnf\` ... hbnf's own notation refuses them"; ABNF.md:146 "\`=/\` incremental alternatives ✓ reader" \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
+- Evidence: ABNF.md:174 "%b/%d/%o/%u/%x, ranges ✓ in \`dialect abnf\` ... hbnf's own notation refuses them"; ABNF.md:146 "\`=/\` incremental alternatives ✓ reader"
 - Left: the repository has both: %-forms in the abnf dialect, C numbers in hbnf's own notation; \`=/\` is built; no record settles the readable-identifiers option (int16, hexint)
 
 ### Block templates
-- Status: IN THE AIR — only potential decisions; syntax never discussed to a decision (latest decision 2026-10-03 \[R230\])
-- Decided: no standing decision (only potential decisions)
+- Status: IN THE AIR — only potential decisions; syntax never discussed to a decision; the purpose it was proposed for, a backend as a schema of blocks that name templates, is not the mechanism of R708 to R711 (latest decision 2026-10-03 \[R230\])
+- Decided: no standing decision (only potential decisions); 2026-11-14: `%emit` is not deprecated or forbidden, but it is not the main mechanism of the layout and language transformers, which is `->`, `=>`, `=>>` \[R711\]
 - Rationale and precedent: none stated in the sources
-- Evidence: RFCPLAN.md:176 (decision 8) and :2359 "A block may name a template, as shorthand for the code that renders"; :2392 "How does a block name a template?" listed as not finished; not found: a template reference syntax in ABNF.md \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
-- Left: syntax for blocks that name templates
+- Evidence: RFCPLAN.md:176 (decision 8) and :2359 "A block may name a template, as shorthand for the code that renders"; :2392 "How does a block name a template?" listed as not finished; not found: a template reference syntax in ABNF.md
+- Left: whether a block may name a template at all is for the author; syntax for blocks that name templates
 
 ### Char rules
 - Status: IN THE AIR — no standing decision; repetition in rules of characters is partly there (latest decision 2026-09-30 \[R140\])
 - Decided: no standing decision (only potential decisions)
 - Rationale and precedent: none stated in the sources
-- Evidence: ABNF.md:351 "\`\*~x\` is a run of them" and RFCPLAN.md:194 \`comment = "#" \*~LF\`; ABNF.md:196 "a character rule cannot repeat"; ABNF.md:181 \`r"…"\` regular expressions \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
+- Evidence: ABNF.md:351 "\`\*~x\` is a run of them" and RFCPLAN.md:194 \`comment = "#" \*~LF\`; ABNF.md:196 "a character rule cannot repeat"; ABNF.md:181 \`r"…"\` regular expressions
 - Left: the potential (repetition and string literals in char rules) was never decided; the repository both allows \`\*~x\` and says "cannot repeat"
 
 ### Cstring sugar
 - Status: IN THE AIR — only a remark was recorded (latest decision none)
 - Decided: no standing decision (only potential decisions)
 - Rationale and precedent: none stated in the sources
-- Evidence: ABNF.md:173 treats quoted strings as terminals with C escapes; no CSTRING-as-sugar rule found in grammars/ascii.hbnf \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
+- Evidence: ABNF.md:173 treats quoted strings as terminals with C escapes; no CSTRING-as-sugar rule found in grammars/ascii.hbnf
 - Left: whether CSTRING is to be a character-stream rule in the library was never decided
 
 ### EBNF or PEG instead of yacc
@@ -751,24 +767,15 @@
 - Precedent: EBNF (considered; named by author): "should be do it in EBNF?" alongside HBNF packages \[R2\]
 - Precedent: PEG (considered; named by author): asked whether better than EBNF for this \[R2\]
 - Precedent: yacc/bison (considered; named by author): asked if Ada has something superior; yacc quirks versus RFC EBNF \[R2\]
-- Evidence: COMPILER-COMPILER.md:5-7 "PEG-style ordered choice and recursive descent"; README.md:71 \`--lint\` for \`\|\` against \`/\` \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): hbnf15.txt:189 and :457 (AI text) call \`\|\` first-match, PEG-style, which is not an author decision
+- Evidence: COMPILER-COMPILER.md:5-7 "PEG-style ordered choice and recursive descent"; README.md:71 \`--lint\` for \`\|\` against \`/\`
 - Left: no decision to adopt PEG as such
 
 ### Extend ebnf
 - Status: IN THE AIR — only a question was recorded; HyperBNF later took ABNF as the base and extended that (latest decision none)
 - Decided: no standing decision (only potential decisions)
 - Rationale and precedent: none stated in the sources
-- Evidence: README.md:27 "a superset of BNF, EBNF, ABNF and YBNF"; ABNF.md:353 \`dialect ebnf\` exists \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
+- Evidence: README.md:27 "a superset of BNF, EBNF, ABNF and YBNF"; ABNF.md:353 \`dialect ebnf\` exists
 - Left: whether the railroad-diagram ideas were ever to be taken into EBNF itself was never decided
-
-### Meta II ideas
-- Status: IN THE AIR — recorded as open and unscheduled (latest decision 2026-10-03 \[R228\])
-- Decided: no standing decision (only potential decisions)
-- Rationale: "it must feel natural when incorporated, not a bolt on. probably fits with the %scan{} %action{} family" \[R228\]
-- Precedent: META II (considered; named by author): quoted: closing its loop needs classification expressible in the notation \[R228\]
-- Precedent: VALGOL (considered; named by assistant, not taken up): hbnf could reproduce it with a translator backend \[R228\]
-- Evidence: RFCPLAN.md:2312 "13b. Closing META II's loop: the classification in the notation. \*Open, and open to argument.\* Not scheduled" \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
-- Left: how to express Analyze/Rule\_Info/classification in the grammar language
 
 ### Token tables and tree-sitter appendix
 - Status: IN THE AIR — only potential questions; the token-table question was answered in the plan (latest decision 2026-10-02 \[R223\])
@@ -778,7 +785,7 @@
 - Precedent: tree-sitter (considered; named by author): fold in its efficiency improvements \[R201\]
 - Precedent: Knuth (considered; named by author): match it somewhat \[R201\]
 - Precedent: token tables (considered; named by author): asked why hbnf went against them \[R223\]
-- Evidence: RFCPLAN.md:417 "Ordering and token tables ... Researched 2026-10-02"; Tree-sitter backend exists (README.md:218 benchmark rows); not found: an appendix on folding tree-sitter's efficiency \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
+- Evidence: RFCPLAN.md:417 "Ordering and token tables ... Researched 2026-10-02"; Tree-sitter backend exists (README.md:218 benchmark rows); not found: an appendix on folding tree-sitter's efficiency
 - Left: the author has not said whether the answer settles it, nor asked for the appendix as a decision
 
 ### W-grammar termination and cycle detection
@@ -788,21 +795,8 @@
 - Rationale: "in practice, a hyper rule will only be expanded 2 or 3 times except in a handful of cases" \[R360\]
 - Rationale: "if we track the hyperrule that is invoked, can't we cycle detect?" \[R374\]
 - Precedent: lazy evaluation (considered; named by author): metanotion not instantiated until needed \[R373\]
-- Evidence: HISTORY.md:261 "Can the cycle be detected? Often, yes, and tracking which hyperrule is being instantiated is the ..."; ABNF.md:106 "a use that needs the same rule with a longer pattern again is refused like any use that grows without end"; ABNF.md:106 "An open end (\`0..\`) is not checked" \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): uncommitted (other machine): RESUME-9b.md's cycle detector (HBNF\_Compilable.Back\_Edges) is for recursive struct fields, not for hyperrule termination, so it does not settle this
+- Evidence: HISTORY.md:261 "Can the cycle be detected? Often, yes, and tracking which hyperrule is being instantiated is the ..."; ABNF.md:106 "a use that needs the same rule with a longer pattern again is refused like any use that grows without end"; ABNF.md:106 "An open end (\`0..\`) is not checked"
 - Left: whether to add cycle detection or lazy instantiation for unbounded metanotions
-
-### Set-logic operators
-- Status: IN THE AIR — an investigation was asked for, and Unicode spellings as the flagship default (latest decision 2026-11-11 \[R604\])
-- Decided: 2026-11-11 decided: investigate other operators from set logic beside juxtaposition (sequence) and the pipe (union): intersection, element of, all of, and "a way to indicate sequence as well as indicate that sequence does not matter" \[R601\]
-- Rationale: BNF "already includes and by juxtaposition" and "or with the pipe"; asks "how much more effective" more operators would be \[R601\]
-- Decided: 2026-11-11 decided: the set-logic operators are written as real Unicode characters (∪ ∩ ∈ and the rest) and work, and are the default spelling in the flagship grammars \[R604\]; asked whether "one of" is the same as element-of \[R605\] (the assistant's answer: the same operation, a literal set or a named one)
-- Decided: 2026-11-11 decided: UTF-8 is allowed outside string literals for operators; a bareword (a name) follows the rules for C symbols, except inside `<>`, where it may hold white space and the punctuation `.`, `,`, `;`, `:` \[R606\]
-- Decided: 2026-11-11 decided: white space may be required between an operator and a bareword, case by case: where it looks bad it is not, where it helps reading it is \[R607\]
-- Doc differs: rule names today are ABNF-style and hold hyphens (`program-unit`, `declaration-seq`, `leaf-X`), which are not C symbol characters; `<name>` is read as ABNF's prose-val and BNF's nonterminal bracket in those dialects; `/` is not in the punctuation list (item 71 of CONTEXTS section 26, `pdp64/16`); whether C symbols include Unicode letters (C23 XID) is unsettled
-- Precedent: Annex A of the C++ standard (considered; named by the assistant, the author approved its reading style): opt, X-seq, X-list, "one of" \[R594\]
-- Evidence: not found: no set-logic operator beyond `|`, `-` (exception), `&x` (lookahead) and `? set` (membership) in ABNF.md or CONTEXTS.md; an unordered group is absent
-- Rationale: the operators are for a nicer grammar, even where the character or token count hardly drops \[R621\]; a shrink is still desirable, not a strict gate \[R622\]
-- Left: the author chooses among the options written 2026-11-11 in CONTEXTS.md section 29 (questions Q1 to Q8: element of and one of, intersection, difference, all of in any order, names, white space, the old spellings, the flagship list), each with a Unicode form and an ASCII twin; before that the plan was: with rationale and precedents, shown on the same COBOL, C and Annex A passages, counted with bench/notation.sh; "one of" and element-of treated as one operator (a set literal or a named set) unless shown otherwise; which grammars are "flagship" to be confirmed; the reader refuses a non-ASCII character outside a string or comment today (`unexpected character`); the author chooses; then build and migrate (plan of 2026-11-11, Phase 3)
 
 ## 03 Parser generation and back ends
 
@@ -810,7 +804,7 @@
 - Status: IN THE AIR — only a potential (a HBNF\_CharType container); nothing in the repository uses that name (latest decision 2026-10-01 \[R191\])
 - Decided: no standing decision (only potential decisions)
 - Rationale: Only "if emitting subtypes is noisy" would they go in a container package. \[R191\]
-- Evidence: not found: searched all files for "HBNF\_CharType"; templates/ada\_scalar.tmpl emits plain \`subtype {{&name}} is {{&type}};\` ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: not found: searched all files for "HBNF\_CharType"; templates/ada\_scalar.tmpl emits plain \`subtype {{&name}} is {{&type}};\`
 - Left: decide whether emitted char subtypes are noisy enough to need a container package
 
 ### Dfa emission
@@ -818,26 +812,17 @@
 - Decided: no standing decision (only potential decisions)
 - Rationale: "if we can do regex as dfa, why not do hbnf as dfa?" \[R127\]
 - Precedent: regex as DFA (considered; named by author): raised as the model for a whole-grammar DFA \[R127\]
-- Evidence: 3350417 "Generator: token DFAs are minimized"; TODO.md:40 "the name DFA fast path" as a speed item; not found: any grammar-as-DFA emitter ; recheck: uncommitted (other machine): hbnf15.txt:1007-1030 confirms hbnf builds an automaton per \`/\` alternative to find shared text (generation-time analysis, RFCPLAN.md), so DFAs exist in the analysis and in C token scanners, but no whole-grammar DFA back end; the 2026-09-29 question stays unanswered in the records
+- Evidence: 3350417 "Generator: token DFAs are minimized"; TODO.md:40 "the name DFA fast path" as a speed item; not found: any grammar-as-DFA emitter
 - Left: the 2026-09-29 question \[R127\] "why not do hbnf as dfa?" is unanswered
 
 ### Hash table and interning
 - Status: IN THE AIR — only a potential (rbtree) and an unclear record; the repository interns keywords and uses its own table without a recorded choice (latest decision none)
 - Decided: no standing decision (only potential decisions)
 - Precedent: rbtree instead of hash table (considered; named by author): asked; no answer recorded \[R68\]
-- Evidence: ABNF.md:182 "a \`%i\` keyword is interned case-insensitively in C"; ABNF.md:348 keyword table interned; not found: any rbtree or hash-table design note ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: ABNF.md:182 "a \`%i\` keyword is interned case-insensitively in C"; ABNF.md:348 keyword table interned; not found: any rbtree or hash-table design note
 - Left: the rbtree question of 2026-09-22 \[R68\] is unanswered
 
 ## 04 Wire layer and bit rules
-
-### Layout grammar for opcodes and charts
-- Status: IN THE AIR — only potentials; no opcode/layout-chart grammar or svg emitter exists (latest decision 2026-11-05 \[R586\])
-- Decided: no standing decision (only potential decisions)
-- Rationale: "the one grammar matches the opcodes and the bit layouts, but what is emitted can be either the assembler/linker or the svg charts." \[R581\]
-- Rationale: "this is the type of application where \\"rewrite rules\\" and \\"text transforms\\" come into their own in hbnf." \[R582\]
-- Decided: 2026-11-11 decided: the simulator also uses hbnf output for opcode generation; its semantics stay by hand, hbnf only parses the binary opcodes into the structs \[R603\]
-- Evidence: not found: searched TODO.md, CONTEXTS.md, README.md, RFCPLAN.md for svg, chart, opcode ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
-- Left: whether rewrite rules, or %emit with prologue/epilogue C, will produce the svg charts; depends on rewrite rules (CONTEXTS.md item 64) being built
 
 ## 05 Templates and output
 
@@ -845,7 +830,7 @@
 - Status: IN THE AIR — only a potential (hbnfconf.o); no object file of either name is produced (latest decision 2026-09-21 \[R25\])
 - Decided: no standing decision (only potential decisions)
 - Rationale and precedent: none stated in the sources
-- Evidence: not found: searched the repository for "libserver" and "hbnfconf.o" (only tests/e2e.sh:64 \`libhbnfconf.so\` and bindings/\*/hbnfconf.\*, which are shared-library and binding names) ; recheck: searched uncommitted (other machine) HISTORY.draft.md (a general BNF history essay), RESUME-9b.md and RESUME-9c.md (Oct 5-6 handoffs), hbnf15.txt, the nine Oct 2-4 snapshot tarballs and hbnf.old (Nov 4 binary, usage and strings), packaging repo ada-on-alpine and mustache-ada, and the committed clone at ff3c5d0 (only README/Pages/Markdown-corpus/benchmark commits since the first pass); nothing there settles it
+- Evidence: not found: searched the repository for "libserver" and "hbnfconf.o" (only tests/e2e.sh:64 \`libhbnfconf.so\` and bindings/\*/hbnfconf.\*, which are shared-library and binding names)
 - Left: whether the config runtime object is named hbnfconf.o
 
 ## 06 Testing and conformance
@@ -855,7 +840,7 @@
 - Decided: 2026-10-25 decided: Asks to clone and evaluate the latest moebiusV hbnf from github. \[R439\]
 - Rationale and precedent: none stated in the sources
 - Evidence: not checked: the evaluation was a conversation in another project
-- Evidence: searched uncommitted (other machine) hbnf15.txt (a 2026-10-18 chat on labeled BNF vs hbnf and imp72), not the 10-25 evaluation
+- Evidence: not found: the 10-25 evaluation is not recorded in the repository
 - Left: nothing to verify
 
 ### Recheck of known bugs
@@ -863,7 +848,7 @@
 - Decided: 2026-10-04 decided: "pull hbnf again and see if the two bugs are still there" \[R235\]
 - Rationale and precedent: none stated in the sources
 - Evidence: TODO.md:57-76 lists the open reader and generator fixes by number (CONTEXTS 26)
-- Evidence: searched packaging repo docs/bugs/ (hbnf-libhbnf-sources is the only hbnf bug, fixed in libhbnf.gpr) and uncommitted (other machine) RESUME-9b.md, RESUME-9c.md: which two bugs were meant is still not recorded
+- Evidence: searched packaging repo docs/bugs/ (hbnf-libhbnf-sources is the only hbnf bug, fixed in libhbnf.gpr): which two bugs were meant is still not recorded
 - Left: which two bugs were meant is not recorded; TODO.md section 3 is the current list
 
 ## Relation to imp72, pcc and other projects
@@ -890,13 +875,6 @@
 - Precedent: affix grammars (considered; named by assistant, not taken up): attribute values on rules \[R431\]
 - Evidence: HISTORY.md:333 "Parameters on rules: affix grammars, CDL and Prolog"
 - Left: no decision to implement
-
-### Col
-- Status: IN THE AIR — no standing decision; %col exists but a col postfix and its use for fixed-format COBOL and YAML are open (latest decision no standing decision)
-- Decided: no standing decision (only potential decisions)
-- Rationale and precedent: none stated in the sources
-- Evidence: TODO.md:78 "\`col\` (0-based?) and \`where (cond)\` as a postfix: proposed, to be confirmed (24)"; corpus/cobol/README.md:34 "Not yet: fixed format"
-- Left: whether col(N) compacts the yaml grammar
 
 ### Use hbnf for IRC and soju
 - Status: IN THE AIR — the soju/IRC project is not in the hbnf clone; hbnf has no IRC grammar (latest decision 2026-10-06 \[R258\])
@@ -952,7 +930,7 @@
 - Rationale: "it emits code from an ast, it matches on a preparsed ast, all lexing/tokenizing already done." \[R4\]
 - Rationale: "there is no collision; the scheme will not be in hbnf" \[R5\]
 - Precedent: ABNF (chosen; named by author): "go with abnf flavor" for astbnf \[R4\]
-- Evidence: not found: searched \*.md, Ada sources, grammars/, git log -S"astbnf"; hbnf\_schema.hbnf is the notation's own grammar \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): astbnf: no hit in any source, tarball, packaging repo or hbnf.old strings; the ada-on-alpine README lists only hbnf, mustache-ada, buildabook as packages
+- Evidence: not found: searched \*.md, Ada sources, grammars/, git log -S"astbnf"; hbnf\_schema.hbnf is the obconf configuration-file grammar (its own header says so), not the notation's own grammar ; astbnf: no hit in any source
 - Left: none; chain and repository now agree (astbnf folded into hbnf)
 
 ### name:type syntax
@@ -967,7 +945,7 @@
 - Status: REJECTED — the author turned down refusal messages and pointers ("noone but us ever used them"); none can be identified in the repository (latest decision 2026-10-28 \[R470\])
 - Decided: 2026-10-28 decided: "no need for refusal messages and pointers; noone but us ever used them." \[R470\]
 - Rationale and precedent: none stated in the sources
-- Evidence: not found: searched \*.md and hbnf\*.adb for refusal wording; "refusal" appears only for the %emit refusal analysis (RFCPLAN.md:2604) and layout refusals (CONTEXTS.md:722), which are different things ; recheck: uncommitted (other machine): RESUME-9b.md uses "refusal" only for the cycle-detector refusal (hbnf\_c.adb Back\_Edges), not for the messages meant; hbnf.old strings show no separate refusal-message feature
+- Evidence: not found: searched \*.md and hbnf\*.adb for refusal wording; "refusal" appears only for the %emit refusal analysis (RFCPLAN.md:2604) and layout refusals (CONTEXTS.md:722), which are different things
 - Left: none; which messages were meant is not recorded, so whether any remain cannot be checked
 
 ## 07 Packaging and release
@@ -981,7 +959,7 @@
 - Evidence: packaging repo: commit 6e53848 (2026-10-12) "Retire the odin and vlang aports; Alpine already ships both"; b123ee8 (2026-10-12) "Retire the fpc aport; Alpine's is older and better"; README.md:39-41 table rows odin, vlang, fpc "retired"; ls testing has none of them
 - Doc differs: build-full-image.sh:13-18 still lists fpc, odin, vlang as "this repo's aports" (stale)
 
-# Done (178)
+# Done (182)
 
 - Implemented in the current code or stated in the current docs, with the evidence.
 
@@ -1124,7 +1102,7 @@
 - Precedent: ALGOL 68 (considered; named by author): same question about left-hand side \[R474\]
 - Precedent: yacc (considered; named by assistant, not taken up): bare colon in a rule head; reason for the type-line choice \[R474\]
 - Evidence: README.md:5-6 "JSON, TOML and YAML are built and tested in all four backends"; WIRE.md:248-251 "%emit{ code }" and "name :: type = ..."; commits d36abec "C code generation for %emit", eac77a0 "rollback { } for %emit ... TOML and YAML tape grammars"; corpus/yaml
-- Doc differs: WIRE.md:251 says %emit with a declared value runs during the read "in the C backend only"
+- Doc differs: WIRE.md:251 says %emit with a declared value runs during the read "in the C backend only"; Rust, Zig and Ada generate it too (R699, R700)
 
 ### Git hooks
 - Status: DONE — the hooks are copied: hbnf's .git/hooks files are byte-identical to ada-on-alpine's (latest decision 2026-10-02 \[R195\])
@@ -1428,7 +1406,7 @@
 - Status: DONE — astbnf was folded into hbnf on 2026-09-21 and hbnf's own reader does the lifting; no separate astbnf layer exists (latest decision 2026-09-21 \[R40\])
 - Decided: 2026-09-21 decided: "let astbnf do the rest of the lifting" beyond the node types already told \[R14\]
 - Rationale and precedent: none stated in the sources
-- Evidence: not found: searched \*.md, \*.ads, \*.adb and git log -S"astbnf" (no hit); the reader works at character level (CHARLAYER.md), with no preparsed AST of comment/block/string/atom \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): astbnf: no hit in any source, tarball or hbnf.old strings
+- Evidence: not found: searched \*.md, \*.ads, \*.adb and git log -S"astbnf" (no hit); the reader works at character level (CHARLAYER.md), with no preparsed AST of comment/block/string/atom ; astbnf: no hit in any source
 - Left: none; the later decisions "we've folded them together, there is no more astbnf just hbnf" \[R40\] and character-level lexing in the grammar \[R31\] carry the lifting into hbnf; the repository history starts 2026-10-01 so earlier code is not available
 
 ### Alternatives, ordered choice and phrase exceptions
@@ -1479,13 +1457,21 @@
 - Precedent: RFC BNF (considered; named by author): asked how compatible ABNF is with it \[R112\]
 - Evidence: RFCPLAN.md:2738 "\`HBNF\_Lookahead.Factor\` works out once which adjacent ... \`--no-factor\` writes the plain chain"; tests/factor.sh "Alternatives that begin with the same elements are read once"; ABNF.md:221 "\`\|\` ordered choice; \`/\` union"
 
+### Column access
+- Status: DONE — `x where (col = N)` is built (0-based), in phrase rules and in rules of characters, in C, Rust, Zig and Ada, and fixed-format COBOL uses it (latest decision 2026-11-11 \[R632\])
+- Decided: 2026-11-03 decided: "a rule should be able to access its col value" \[R539\]; 2026-11-11 decided: "do col and fixed format" \[R632\]
+- Rationale and precedent: none stated in the sources
+- Evidence: hbnf\_grammar.ads `B_Col` and `B_Col_Test`; ABNF.md:349 "Column test"; tests/column.sh builds tests/column/records.hbnf in the four backends and reads tests/column/cases.txt, and generates corpus/cobol/cobol-fixed.hbnf (49 lines) in Rust, Zig and Ada
+- Doc differs: CONTEXTS.md:20 still calls `col` and `where (cond)` "proposed ... to be confirmed", and TODO.md lists it as proposed; both predate the build
+- Left: a word or number cut at column 72 and continued is not read (NC205A, the one NIST fixed-format gap); see COBOL grammar
+
 ### Comma list operator
 - Status: DONE — \`#\` is built as the comma-list operator (latest decision 2026-10-01 \[R176\])
 - Decided: 2026-10-01 decided: "i'm ok with having # as the operator if we don't have another use for it" \[R176\]
 - Rationale: "i'm ok with having # as the operator if we don't have another use for it" \[R176\]
 - Precedent: parse.y (considered; named by assistant, not taken up): uses # for input comments; hbnf grammar uses ; as ABNF does \[R176\]
 - Precedent: ABNF (considered; named by assistant, not taken up): comments the grammar with ; \[R176\]
-- Evidence: RFCPLAN.md:196 (decision 12) "Comma lists are \`#\`. \*Built 2026-10-18 (\`tests/commalist.sh\`).\*"; commit 70bca4d "comma lists n#m" \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): no new evidence
+- Evidence: RFCPLAN.md:196 (decision 12) "Comma lists are \`#\`. \*Built 2026-10-18 (\`tests/commalist.sh\`).\*"; commit 70bca4d "comma lists n#m"
 - Left: none; the condition "if we don't have another use for it" is met (no other use of \`#\` recorded)
 
 ### Comments
@@ -1514,7 +1500,7 @@
 - Precedent: yacc (rejected; named by author): "yacc isn't hbnf"; no dialect clash \[R522\]
 - Precedent: Raku slangs (considered; named by assistant, accepted): asked to verify and add the comparison to METACOMPILERS.md \[R525\]
 - Evidence: CONTEXTS.md:717 "\*\*No optimization is given up by switching\*\*"; CONTEXTS.md:8-9 islands \`include "f" as x\` and \`=\> grammar(x)\` built (aff3de9), C, Rust, Zig, Ada; CONTEXTS.md:733 \`skip\_ws\` one dispatch on the current grammar
-- Doc differs: CONTEXTS.md:9 "built, phase 1: white space only ... tree-sitter refuses a switch"; TODO.md:80-83 labels, switch phase 2 and 3, the \`=\>\` arrow, bounded island not built
+- Doc differs: CONTEXTS.md:9 "built, phase 1: white space only ... tree-sitter refuses a switch"; TODO.md:80-83 labels, switch phase 2 and 3, bounded island not built (the \`=\>\` arrow has since been built, R686 to R698)
 
 ### Dotted words
 - Status: DONE — dotted runs are single words (latest decision 2026-10-01 \[R171\])
@@ -1537,6 +1523,17 @@
 - Precedent: ABNF (considered; named by author): has no {} prologue/epilogue blocks nor %scan{} %action{} \[R167\]
 - Precedent: yacc (considered; named by author): asked how %action fails to do what yacc actions do \[R441\]
 - Evidence: METACOMPILERS.md:267 "the aim is the smallest total ruleset, in lines, characters, tokens and rules, and code belongs where it shortens that"; ABNF.md:183 \`%scan{ … }\`, \`%action{ … }\`; ABNF.md section 5 "What HyperBNF adds"
+
+### Facts stored by matched rules
+- Status: DONE — facts are built: `=> tag.attr = tag2` keeps the text of one match as an attribute of a named fact, read later, in all four backends (latest decision 2026-11-13 \[R698\])
+- Decided: 2026-11-03 decided: Q9: "yes to facts". \[R523\]
+- Decided: 2026-11-13 decided: the Ada backend generates facts and rewrites, up to par with C, Rust and Zig \[R698\]
+- Rationale: "such as the typedef thing in C. and I'm sure it will have a lot of use in COBOL." \[R519\]
+- Precedent: C typedef (considered; named by author): example of a fact stored by a matched rule \[R519\]
+- Precedent: COBOL (considered; named by author): expected to use facts heavily \[R519\]
+- Evidence: hbnf\_grammar.ads `B_Fact`; tests/consequence.sh builds and runs facts (tests/consequence/macros.hbnf) and set additions (names.hbnf); the register rows R686, R690 and R698 record the Rust, Zig and Ada ports
+- Doc differs: CONTEXTS.md:17 "Facts ... decided yes; nothing built" and TODO.md "Facts ... decided yes, nothing built" predate the build
+- Left: `->` templates and `=>` template functions that use facts are generated by C only (Check\_Consequences in hbnf\_compilable.adb)
 
 ### Include and overrides
 - Status: DONE — \`include\` is built and a later \`=\` overrides without error (latest decision 2026-09-29 \[R115\])
@@ -1591,7 +1588,7 @@
 - Decided: 2026-09-23 decided: "the listops work is so that our generator will output the exact same thing that parse.y does. byte for byte."; without listops "we can use whatever flat thing we want" \[R93\]
 - Rationale: "so our generator will output the exact same thing that parse.y does. byte for byte"; without listops "whatever is most efficient" \[R93\]
 - Precedent: parse.y (chosen; named by author): listops reproduce its output byte for byte \[R93\]
-- Evidence: ABNF.md:342 "\`layout NAME\` reads \`layouts/NAME/layout.hbnf\` ... \`layout\_ops { head { … } entry { … } … }\`"; layouts/tailq, layouts/rb; not found: a \`listops { }\` block; RFCPLAN.md:2703 "\`layout\_ops { head { } entry { } ... }\` block (it was \`listops\`, and every grammar that had one now says \`layout\_ops\`" \| recheck hbnf-recheck-12: searched packaging repo (ada-on-alpine, mustache-ada), uncommitted (other machine) HISTORY.draft.md, RESUME-9b.md, RESUME-9c.md, hbnf15.txt, nine hbnf-\*.tar.gz snapshots (2026-10-02..04), hbnf.old, and clone HEAD ff3c5d0 (only README link commits since 2026-11-05): uncommitted (other machine): snapshot RFCPLAN.md:75-76 (2026-10-03) has \`listops\` as a whole-parser directive set by tailq.hbnf, and hbnf.old contains \`hbnf\_c\_\_has\_listops\`, older than the current \`layout\` form
+- Evidence: ABNF.md:342 "\`layout NAME\` reads \`layouts/NAME/layout.hbnf\` ... \`layout\_ops { head { … } entry { … } … }\`"; layouts/tailq, layouts/rb; not found: a \`listops { }\` block; RFCPLAN.md:2703 "\`layout\_ops { head { } entry { } ... }\` block (it was \`listops\`, and every grammar that had one now says \`layout\_ops\`"
 - Left: none for the purpose; the rename to \`layout\_ops\` and the \`layout\` directive come from a decision the chain does not show (see Layouts (tailq, rb, ast))
 
 ### Literals and number syntax
@@ -1719,6 +1716,19 @@
 - Precedent: ABNF (chosen; named by author): reuse ABNF names where defined \[R77\]
 - Evidence: grammars/obconf.hbnf:25 \`wordchars = ALPHA \| DIGIT \| "\_" \| "-" \| "."\`; RFCPLAN.md:142 "\`wordchars\` becomes a grammar rule"; ABNF.md:342 and RFCPLAN.md:117 no longer list a \`wordchars\` directive (commit 1133cf1); grammars/ascii.hbnf and common.hbnf use SP, HTAB, WSP, CRLF (ABNF names)
 
+### Set-logic operators
+- Status: DONE — built in C, Rust, Zig and Ada, with the gaps under Left (latest decision 2026-11-13 \[R689\])
+- Decided: 2026-11-11 decided: investigate other operators from set logic beside juxtaposition (sequence) and the pipe (union): intersection, element of, all of, and "a way to indicate sequence as well as indicate that sequence does not matter" \[R601\]
+- Rationale: BNF "already includes and by juxtaposition" and "or with the pipe"; asks "how much more effective" more operators would be \[R601\]
+- Decided: 2026-11-11 decided: the set-logic operators are written as real Unicode characters (∪ ∩ ∈ and the rest) and work, and are the default spelling in the flagship grammars \[R604\]; asked whether "one of" is the same as element-of \[R605\]
+- Decided: 2026-11-11 decided: UTF-8 is allowed outside string literals for operators; a bareword (a name) follows the rules for C symbols, except inside `<>`, where it may hold white space and the punctuation `.`, `,`, `;`, `:` \[R606\]; white space may be required between an operator and a bareword, case by case \[R607\]
+- Decided: 2026-11-12 decided: the author chose the spellings from the options written in CONTEXTS.md section 29 \[R643\] and refined them: `x in S` and `x not in S` (the old `?` and `?!` are refused with a message) \[R647\]; `all of ( a b c )` is every member once in any order \[R649\]; `intersect` is the word for intersection \[R654\]; `one of`, `some of`, `any of` and `all of` form the plain-word family \[R661\]; `choose` and `permute`, with `with replacement` and the short forms `C()`, `P()`, `Cr()`, `Pr()` \[R659\]; the infix `a & b & c` group is dropped \[R660\]; chains and a set after an element build \[R666\]; the limit of 30 members is removed \[R689\]
+- Rationale: the operators are for a nicer grammar, even where the character or token count hardly drops \[R621\]; a shrink is still desirable, not a strict gate \[R622\]
+- Precedent: Annex A of the C++ standard (considered; named by the assistant, the author approved its reading style): opt, X-seq, X-list, "one of" \[R594\]
+- Evidence: the reader (hbnf\_grammar.adb) takes `one of`, `all of`, `some of`, `any of`, `choose`, `permute`, `intersect` and `in`/`not in`; tests/setlogic.sh and the 29 grammars in tests/setlogic/; corpus/cobol/cobol.hbnf uses `any of` for the data clauses
+- Doc differs: ABNF.md has no row for the set-logic spellings beyond `in` and `not in`; CONTEXTS.md section 29 is an append-only log whose early lines (the infix `&` group, Zig and Ada refusing the notation) are superseded by later rows, and its heading still says "nothing built"; the header of tests/setlogic.sh says "in C so far"
+- Left: `choose ... with replacement` is generated by C only (Rust, Zig and Ada refuse it by rule name); Ada refuses a case-insensitive literal in a written set; `unique`, difference as a set operator and the Unicode forms `∪` and `∖` are not built; which grammars are "flagship" (R604) is to be confirmed, and moving them to the Unicode spellings is not recorded as done; the reader still refuses a non-ASCII character outside a string or comment
+
 ### Skip directive notation
 - Status: DONE — factoring over the whole grammar set and the ladder with a byte-identical-types regression test are built (latest decision 2026-10-29 \[R507\])
 - Decided: 2026-10-29 approved-proposal: "whole meal deal. 1 and 2": widen to the whole grammar set, and require byte-identical type declarations plus the 54-fold ladder regression test. \[R507\]
@@ -1767,16 +1777,16 @@
 - Evidence: 60093b6 "C arena: big chunks are mapped, aligned for huge pages"; 9884a84 "an arena sized from the input and backed ahead of use"; dd34982 "an arena that takes back a failed attempt"; ABNF.md:362 "the arena chunk size is an \`enum\`"
 
 ### Ast as ir
-- Status: DONE — the generator emits a typed tree and a parse function from the grammar with no separate IR stage (latest decision 2026-09-20 \[R3\])
-- Decided: 2026-09-20 decided: "i don't think we need an ir. the ast is the ir"; wants a "nice schema format" mapping the AST to types and a parse function that allocates and populates them \[R3\]
+- Status: DONE — for the parser's output: the generator emits a typed tree (the AST) and a parse function from the grammar; the generator's own IR between its stages is a separate decision, not built (latest decision 2026-11-14 \[R708\])
+- Decided: 2026-09-20 decided: "i don't think we need an ir. the ast is the ir"; wants a "nice schema format" mapping the AST to types and a parse function that allocates and populates them \[R3\]; superseded in part 2026-11-14 for the generator: the AST is what a generated parser builds and the IR, the front end's "40 operations", is what the generator passes between its stages \[R708\] (see Generator pipeline: operations, layouts, languages)
 - Rationale and precedent: none stated in the sources
-- Evidence: README.md:25 "emits a parser and its typed tree in C, Rust, Zig or Ada"; hbnf\_schema.hbnf and hbnf\_shape.ads (what the code generators share, 5ad9a08)
+- Evidence: README.md:25 "emits a parser and its typed tree in C, Rust, Zig or Ada"; hbnf\_shape.ads (what the code generators share, 5ad9a08); not found: any type or file for the generator IR
 
 ### Astbnf cli lexer
 - Status: DONE — the author folded astbnf into hbnf ("hbnf now covers all of astbnf"), so the cli is hbnf itself (\`--ast\`, \`--ast-tools\`, \`--writer\`) and the lexer is in templates/ (latest decision 2026-09-21 \[R40\])
 - Decided: 2026-09-21 decided: "add the astbnf cli but I want you to emit the lexer as well. better translate that to c/rust/zig also" \[R19\]; later 2026-09-21: "we've folded them together, there is no more astbnf just hbnf hbnf now covers all of astbnf" \[R40\]
 - Rationale and precedent: none stated in the sources
-- Evidence: not found: grep -ri astbnf over the whole repository returns nothing; the \`--ast\`, \`--ast-tools\`, \`--writer\` options in hbnf.adb:174 may have replaced it ; recheck: uncommitted (other machine): hbnf.old (Nov 4 binary) has no \`astbnf\` string and its usage line lists --ast, --ast-tools, --writer; packaging repo: no astbnf in ada-on-alpine or mustache-ada; the successor claim is still unrecorded
+- Evidence: not found: grep -ri astbnf over the whole repository returns nothing; the \`--ast\`, \`--ast-tools\`, \`--writer\` options in hbnf.adb:174 may have replaced it
 - Left: none stated by the author; which of the \`--ast\`/\`--writer\` options is the successor of the astbnf cli is not named
 
 ### Back end spectrum and future back ends
@@ -1989,7 +1999,7 @@
 - Decided: 2026-10-28 decided: "just not in the docs" \[R472\]
 - Rationale: "I thought we run over a grammar, it emits a parser. end of story" \[R95\]
 - Precedent: OpenBSD conf.c/conf.h (considered; named by author): lexer and parser in one file populating a conf variable \[R22\]
-- Evidence: 3ab7fd5 "Remove --conf: a config grammar writes its entry point in its own epilogue"; bindings/README.md "\`conf\_error\` comes from \`runtime/hbnf\_conf.h\`" ; recheck: uncommitted (other machine): RESUME-9c.md records the retirement of HBNF\_Config (hbnf\_config.ad\[sb\]) and the rename to libhbnf.gpr, not the --conf option; packaging repo: testing/hbnf/APKBUILD has no --conf and its check() never calls it; TODO.md:88 no longer says \`--conf\` (9b4fdee) and still lists the conf glue (templates/c\_statements.tmpl holds it)
+- Evidence: 3ab7fd5 "Remove --conf: a config grammar writes its entry point in its own epilogue"; bindings/README.md "\`conf\_error\` comes from \`runtime/hbnf\_conf.h\`"
 - Left: finish moving the conf glue out of the templates (TODO.md:88)
 
 ### obconf parser: drop-in for parse.y and --conf
@@ -2072,7 +2082,7 @@
 - Evidence: hbnf.adb:81-113 "--templates=DIR, else ... ~/.local/share, then each \$XDG\_DATA\_DIRS entry (/usr/local/share and /usr/share)"; templates/\*.tmpl (70+ files)
 
 ### Template engine
-- Status: DONE — the emitters work through .tmpl files with filled holes; the Emit\_Rule\_Parser and Emit\_Alternation conversion was carried through (latest decision 2026-09-30 \[R134\])
+- Status: DONE — the Mustache renderer and the .tmpl files exist and the emitters use them for prologues, type declarations and the parse entry; the per-rule parser logic is still Ada string building, and the engine is to be replaced by the language grammars (R608, R710) (latest decision 2026-09-30 \[R134\])
 - Decided: 2026-09-30 approved-proposal: "keep going into Emit\_Rule\_Parser and Emit\_Alternation" \[R134\]
 - Rationale: "this simple substituter could save a lot of code and make things much more readable and easy to edit" \[R103\]
 - Rationale: "I want a bunch of Append and Put\_line gone from the Ada code" \[R128\]
@@ -2082,6 +2092,7 @@
 - Precedent: @foo@ template style (considered; named by author): the style in use, compared against \${foo} \[R122\]
 - Evidence: templates/c\_rule\_head.tmpl, c\_rule\_line.tmpl, c\_alt\_kind.tmpl, c\_seq\_ref.tmpl and rust\_/zig\_/ada\_ equivalents; commit f1ab596 "The code templates are rendered by hbnf's own Mustache package"
 - Doc differs: RFCPLAN.md:747 still describes the templates as \`\${name}\` holes (history; 3b at :753 records the switch to Mustache \`{{ }}\`, which RFCPLAN.md:559 and README.md:15-16 now state)
+- Doc differs: the "bunch of Append and Put\_line gone" that the author asked for \[R128\] is not reached: hbnf\_c.adb has about 2,240 `Append (` calls beside 26 template fills, and the other backends carry 700 to 1,300 each; the conversion of those calls is overtaken by R710 (details tbd)
 
 ## 06 Testing and conformance
 
@@ -2458,6 +2469,13 @@
 - Rationale: "codepoints and chars are the same things; a utf8 char is a string that maps to a codepoint" \[R337\]
 - Evidence: ABNF.md:78 "code points, with UTF-8 decoded on input"; CHARLAYER.md:16 "UTF-8 code points as primitives (decode on input, match on code points)"
 
+### Col
+- Status: DONE — `col` is a built test (see Column access) and fixed-format COBOL uses it; whether it compacts the yaml grammar was never decided (latest decision 2026-11-11 \[R632\])
+- Decided: 2026-11-11 decided: "do col and fixed format" \[R632\]; earlier: no standing decision (only potential decisions)
+- Rationale and precedent: none stated in the sources
+- Evidence: tests/column.sh; corpus/cobol/cobol-fixed.hbnf; corpus/cobol/README.md describes the fixed format
+- Left: whether `col` compacts the yaml grammar (no yaml grammar uses it)
+
 ### Context sensitivity
 - Status: DONE — the README claims context-sensitive languages and contexts are built (latest decision 2026-10-17 \[R330\])
 - Decided: 2026-10-17 decided: "surely imp72 could have parsed c++?"; "I never agreed to 'context free' grammars. ever."; semantic actions store context; question is the right unjarring way to access it. \[R330\]
@@ -2731,7 +2749,7 @@
 - ybnf/ebnf/abnf/bnf dialect directives: chosen in RFC friendliness
 - "you are not expected to understand this" comments: rejected in Preamble and epilogue, prose values and rbnf
 
-# Where the current docs or code differ from the decisions (53)
+# Where the current docs or code differ from the decisions (56)
 
 - Name: HBNF and HyperBNF: README.md:27 says "YBNF (yacc's grammar language)", which names ybnf as yacc's notation, as the 2026-10-23 decision allowed; no "ybnf is ours" framing found
 - Compiler compiler: TUTORIAL.md:175 says the Ada column is "none yet" for visit/fold
@@ -2752,7 +2770,7 @@
 - POSIX BNF and yacc grammars: corpus/posix/shell.md reads yacc as pasted, more than "need not support cut and paste"
 - W-grammar adoption: the chain says "wgrammar dialect"; no \`dialect wgrammar\` exists, the notation is part of the default hbnf one (ABNF.md:353 dialects: bnf, ebnf, abnf, ybnf, hbnf)
 - Skip directive notation: tests/ladder/cases.txt has 27 inputs and the test finds six levels, not a 54-fold ladder; RFCPLAN.md item 19 "Not done: ... the same ladder fast path in Rust, Zig and Ada"
-- Contexts, islands and grammar switching: CONTEXTS.md:9 "built, phase 1: white space only ... tree-sitter refuses a switch"; TODO.md:80-83 labels, switch phase 2 and 3, the \`=\>\` arrow, bounded island not built
+- Contexts, islands and grammar switching: CONTEXTS.md:9 "built, phase 1: white space only ... tree-sitter refuses a switch"; TODO.md:80-83 labels, switch phase 2 and 3, bounded island not built (the \`=\>\` arrow has since been built, R686 to R698)
 - Pattern features (phrases, end splice, plural, join): CONTEXTS.md:19 phase 3 (phrase variants in \`ast\`, the tape case) "decided design; not built", which is the approved 85990/86079 follow-up, outside the Now line
 - bol and eol: ABNF.md:121 refuses \`^\`/\`\$\` in \`r"..."\`, where the Now line says they "work as normal"; the later bol/eol design (CONTEXTS.md:13) is the standing state
 - Pretty printer back end and printconf: no \`printconf\` program or option exists in hbnf; USENIXSUBMISSION.md:293 and :298 name only the daemons' own \`printconf.c\`
@@ -2781,11 +2799,14 @@
 - Book toolchain: the image definition does not name hbnf or buildabook explicitly
 - LLM token measurement and constrained decoding: TODO.md:24 says bench/tokens.sh is broken (empties tokens.md) and the token figures are the 10-27 ones
 - Bit, octet and string layering: WIRE.md:341-346 describes the Units design (b, B, c, W suffixes, \`byte 9\`, \`word 36\`) as a design; not checked whether it is built, so 9- and 18-bit machines are stated, not shown
-- Emit syntax and actions: WIRE.md:251 says %emit with a declared value runs during the read "in the C backend only"
+- Emit syntax and actions: WIRE.md:251 says %emit with a declared value runs during the read "in the C backend only"; Rust, Zig and Ada generate it too (R699, R700)
 - Grammar dialects: corpus/c/README.md:16 says "C11, C17 and C23 are not in it: no yacc grammar of theirs exists to measure", RFCPLAN.md:2757 lists "C17 and C23 grammars" as unbuilt (the 2026-10-24 "upgrade to c23 parsing" is not built; c11.hbnf is the newest)
-- C and C++ grammars and compiler: TODO.md:101 "ALGOL 68, C++ grammars: not started"; the C preprocessor grammar is not built (RFCPLAN.md:2757)
+- C and C++ grammars and compiler: TODO.md:101 "ALGOL 68, C++ grammars: not started"; the C preprocessor grammar is built (corpus/c/cpp.hbnf, C backend only), which RFCPLAN.md:2757 lists as unbuilt
 - Fork autodetect: ABNF.md:112 says "Off by default" and "listed on stderr" (the decision says stdout and no annotation; annotation is not needed, so only the default and the stream differ)
 - COBOL grammar: corpus/cobol/README.md:8 "vendor extensions are left out", the chain's challenge about vendor forms is not settled in the code
+- Generator pipeline: operations, layouts, languages: README.md, USENIXSUBMISSION.md and HISTORY.md describe four emitters and Mustache templates as the architecture; RFCPLAN.md step 13b describes `%emit` blocks that name templates; no document before 2026-11-14 states the three stages (front end, layout transformer, language transformer) of R708 to R712
+- Set-logic operators: ABNF.md has no row for the spellings beyond `in` and `not in`; CONTEXTS.md section 29 is a log whose early lines are superseded by later rows
+- Priority order of the grammar targets: TODO.md and RFCPLAN.md step 20 give COBOL, the C preprocessor, ALGOL 68, then C++ "oldest first"; the author's quoted messages of 2026-11-11 give no order and the handoff text of that day lists another (details tbd)
 
 # Decision briefing: open notation questions
 
@@ -2848,7 +2869,7 @@ Project: hbnf (HyperBNF, the author's grammar notation and parser/code generator
   - Fit: P-LOAD fair; P-GATE requires approval; essentially Option 4 plus syntax.
 - Option 6 - A module system like Ada's packages or Rust's modules: named units with explicit interface (`export`) and `with`/`use` style imports, plus `use` to open a module so names go unqualified.
   - Rationale: the most complete answer; it is what a language community expects from a tool that targets Ada and Rust (hbnf_ada.adb, hbnf_rust.adb exist).
-  - Precedent: Ada 95 child packages (Pkg.Child.Name, `with`/`use`); Rust `mod`/`use`; Erlang's `module:function`. (unverified: general knowledge; Ada rules are well known but not checked against a reference manual on this machine)
+  - Precedent: Ada 95 child packages (Pkg.Child.Name, `with`/`use`); Rust `mod`/`use`; Erlang's `module:function`. (unverified: general knowledge; Ada rules are well known but not checked against a reference manual)
   - Cost and risk: largest design and docs cost; mismatches hbnf's one-file-one-grammar shape; pulls in visibility and cyclic-import problems; the exact opposite of the author's rule.
   - Fit: P-OCCAM strongly against; mention only because he asked for the spectrum.
   - Note: you said "don't do that if we can at all avoid it": [R177]
@@ -2895,12 +2916,12 @@ Project: hbnf (HyperBNF, the author's grammar notation and parser/code generator
   - Note: you said "Keep colon, expressions in": [R312]; this option drops the colon form for brackets
 - Option 5 - P4-style or Erlang bit-syntax declaration: a header with fields and widths, `bit<4> version;` (P4) or `<<Version:4, Ihl:4, Tos:8>>` (Erlang), place implied by order, with explicit places only for the rare check.
   - Rationale: the order of fields already fixes the place (hbnf proves `@` only as a check, WIRE.md:130: "It writes nothing new; it checks the author's arithmetic against the RFC"), so most grammars need no `@` at all.
-  - Precedent: P4 `header ipv4_t { bit<4> version; bit<4> ihl; ... }` and Erlang `<<A:4, B:4>>` are both well known; neither was checked on this machine. (unverified: general knowledge) (your referent [R312])
+  - Precedent: P4 `header ipv4_t { bit<4> version; bit<4> ihl; ... }` and Erlang `<<A:4, B:4>>` are both well known; neither was checked. (unverified: general knowledge) (your referent [R312])
   - Cost and risk: `bit<4>` clashes with hbnf's angle-free rule notation and its parameterised rules; Erlang's `<<...>>` has the width on each variable, which is already `name:N`, i.e. nothing new; no solution for the offset-with-gaps case (WIRE.md:350 registers read in any order with gaps and overlaps).
   - Fit: P-RFC against (not RFC notation); P-OCCAM against.
 - Option 6 - The RFC packet-picture notation: accept a pasted ASCII diagram (the 32-bit-wide `+-+-+` boxes of RFC 791 and others) as the source of field widths and order.
   - Rationale: the most RFC-natural way a person reads a header; the README's premise is that a grammar reads like the RFCs.
-  - Precedent: RFC 791 (IPv4), RFC 793 (TCP) and RFC 8650-era drafts' diagrams; the `art2bytes`-like tools and Kaitai's `.ksy` (YAML with `type: b4`) are the machine-readable cousins. (unverified: general knowledge; none of these tools is on this machine) (your referent [R320])
+  - Precedent: RFC 791 (IPv4), RFC 793 (TCP) and RFC 8650-era drafts' diagrams; the `art2bytes`-like tools and Kaitai's `.ksy` (YAML with `type: b4`) are the machine-readable cousins. (unverified: general knowledge; none of these tools was checked) (your referent [R320])
   - Cost and risk: parsing ASCII art is fragile (variable-width fields, labels cut across rows), cannot say a layer other than bits (no `B` suffix, no chars), and cannot carry actions; a very different parser; the diagram is documentation, not the grammar.
   - Fit: P-RFC good, P-LOAD good for humans; P-GATE (round trip) poor; best as a generator output (emit a diagram from the grammar) than an input.
 - Recommendation: MINE (P): Option 1 (keep `@K:N`), and correct the decision record by quoting the code: ":bits@offset" becomes "`name:N` for width, `name@K:N` for place and width" with a note of the 2026-10-18 wording, since the WIRE.md table already gives a precedent for each character and the same day's approved proposal uses `@Off:Len`. If he truly prefers width first, Option 2 is a mechanical sed over a known set of files, best done before more grammars exist. What would change my mind: if few grammars use `@` (the check) the churn is cheap and the "optional suffix" argument wins.
@@ -2994,7 +3015,7 @@ Project: hbnf (HyperBNF, the author's grammar notation and parser/code generator
   - Fit: P-OCCAM against; P-LOAD against; worth it only if two audiences really exist.
 - Option 5 - Drop `_Thread_local` for a portable fallback and keep everything else as is: a macro in the emitted prologue chooses `_Thread_local` when `__STDC_VERSION__ >= 201112L`, else `__thread`, else nothing (single-threaded).
   - Rationale: the minimum change that makes the generated file compile under `-std=c99` for the forks and switch cases without redesigning state; the feature test macro pattern (`__STDC_VERSION__`) is exactly what bison's skeleton does (verified: c.m4:230).
-  - Precedent: glibc and many projects use `#if defined __STDC_VERSION__ && __STDC_VERSION__ >= 201112L` for `_Thread_local` and `__thread` for GNU compilers (unverified: general knowledge); the C feature test macros are `__STDC_VERSION__` (199901L, 201112L, 201710L, 202311L) (unverified for the exact values of C23 on this machine: gcc/clang here were not queried).
+  - Precedent: glibc and many projects use `#if defined __STDC_VERSION__ && __STDC_VERSION__ >= 201112L` for `_Thread_local` and `__thread` for GNU compilers (unverified: general knowledge); the C feature test macros are `__STDC_VERSION__` (199901L, 201112L, 201710L, 202311L) (unverified for the exact values of C23: gcc and clang were not queried).
   - Cost and risk: a few lines in hbnf_c.adb (3 sites: 807, 808, 10424) plus one test with `-std=c99`; if the fallback is "nothing" then two parsers in two threads share state silently: a latent error of exactly the kind hbnf's gates refuse, so the fallback should be "refuse to compile" (`#error`), not silent.
   - Fit: P-GATE good if the failure is loud; P-OCCAM good.
 - Option 6 - Put the standard in one place and test it: keep C99 as the claim for the output, add `tests/std99.sh` that compiles every generated parser with `-std=c99 -Wall -Werror` (or `-std=gnu99`) and make the failures the work list, without deciding the solutions in advance.
