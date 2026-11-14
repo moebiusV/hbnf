@@ -35,7 +35,8 @@ into actual code".  Stage (a) as hbnf grammars is a question for the author (R71
    packaged properly, and the builder has to know how.  What it does (R719): it **generates the makefiles, configure files and other
    infrastructure** so that the user can build the emitted code and the `.o` files into a project, and **a command that packages the
    project up**, so that the project is easy to share and to inspect; the builder writes that infrastructure and need not compile
-   anything itself.  Details tbd: the form of the packaging command, what is packaged for each language, and what wiring and
+   anything itself.  It emits the infrastructure and does not run it, just as hbnf emits parser code and does not run it, and **each
+   builder is its own grammar with an epilogue** (R720), like a layout and a language.  Details tbd: the form of the packaging command, what is packaged for each language, and what wiring and
    packaging each language needs, and whether that knowledge lives in `builders/` or in the language directory (R614).
 
 Whether the output of the layout is a different IR format or the same one is *details tbd* (R714: "possibly a different ir format,
