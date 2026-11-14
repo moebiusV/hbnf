@@ -33,6 +33,8 @@ Status vocabulary (the author's rule): a decision stays a decision when its deta
    and infrastructure for building the emitted code and `.o` files into a project, and a command that packages the project up, for
    sharing and inspection; it need not compile anything itself.  R719.  It emits that infrastructure without running it, as hbnf
    emits parser code without running it, and each builder is its own grammar with an epilogue.  R720.
+   Layouts, languages and builders are one kind of thing: grammars and epilogues that hbnf uses as part of itself while running,
+   compiled to `.o` files that are linked in; several languages could therefore interoperate in hbnf, possible but not a goal now.  R721.
 9. **"Jets" is fine, "it is a term of art"** (R713): the removal of the word in R352 is withdrawn.
 
 Details tbd: what wiring and packaging each language needs and the form of the packaging command (R718, R719), whether the layout's output is a different IR format or the same one, how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),
