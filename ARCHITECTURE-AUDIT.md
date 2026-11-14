@@ -35,6 +35,8 @@ Status vocabulary (the author's rule): a decision stays a decision when its deta
    emits parser code without running it, and each builder is its own grammar with an epilogue.  R720.
    Layouts, languages and builders are one kind of thing: grammars and epilogues that hbnf uses as part of itself while running,
    compiled to `.o` files that are linked in; several languages could therefore interoperate in hbnf, possible but not a goal now.  R721.
+   The Ada reader will also become an hbnf grammar plus an epilogue, possibly a minimal one that links in the existing Ada analysis
+   and optimisation code.  R722.
 9. **"Jets" is fine, "it is a term of art"** (R713): the removal of the word in R352 is withdrawn.
 
 Details tbd: what wiring and packaging each language needs and the form of the packaging command (R718, R719), whether the layout's output is a different IR format or the same one, how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),
@@ -128,11 +130,10 @@ Questions only the author can answer, each decided neither way here:
 3. Do layouts nest under `languages/` (R614, "Maybe")?
 4. Should `ast` and `tape` become files under `layouts/` like `tailq` and `rb`, as the pipeline implies?
 5. Does a builder read the same IR as the layout and language stages (R716, "possibly")?
-6. Is stage (a), the front end, the Ada reader replaced by hbnf grammars and epilogues (self-hosting), or does the Ada reader stay as
-   the bootstrap beside them (R717)?
-7. Is the output of the layout stage a different IR format, or the same one (R714, "possibly a different ir format, possibly not")?
+6. Is the output of the layout stage a different IR format, or the same one (R714, "possibly a different ir format, possibly not")?
 
-Answered since the first version of this file: "jets" (R713, it stays as a term of art).
+Answered since the first version of this file: "jets" (R713, it stays as a term of art); the front end (R722, the Ada reader also becomes
+an hbnf grammar plus an epilogue, possibly a minimal one that links in the existing Ada analysis and optimisation code).
 
 Details tbd within decided matter: the operation list and the typing of each operation; how a layout grammar names the shape it
 produces; how a language grammar receives it; building and linking the `.o` files; how the one emitter back end finds the grammar.

@@ -14,7 +14,8 @@ proposal** is not a decision.
 All the stages are written as **hbnf grammars with epilogues, linked in as `.o` files** (R714): "so it is a pipeline, hbnf grammars plus
 epilogues and linked in .o files will a) parse the grammars and emit optimized ir b) layout grammars take the ir and transform it into
 the layout form c) takes the output of layout, possibly a different ir format, possibly not, and transforms it from the 40 operations
-into actual code".  Stage (a) as hbnf grammars is a question for the author (R717): the reader is Ada today.
+into actual code".  Stage (a) is too (R722): the Ada reader becomes an hbnf grammar plus an epilogue, a minimal one that links in the existing Ada analyses and
+optimisation code.  Nothing of this is built: the reader is Ada today (`hbnf_grammar.adb`).
 
 1. **Front end.**  The reader, the analyses (compilability, lookahead, contexts, facts) and the optimisations turn the grammar into
    the IR: about forty typed operations (hbnf-ir, hbnf-ops; the list is *details tbd*, a first count is under "The operations" below).
@@ -40,9 +41,12 @@ into actual code".  Stage (a) as hbnf grammars is a question for the author (R71
 
 Layouts, languages and builders are therefore one kind of thing (R721): "grammars and epilogues that hbnf itself uses as part of itself
 as part of its running, generate .o files that are linked in".  A consequence the author names: "theoretically we could have multiple
-languages interoperating in hbnf (not that we want to at this point, but it will be possible)".  Not a goal now.  Whether the front end
-is one of these (R717) is still a question.  Details tbd: the form of the packaging command, what is packaged for each language, and what wiring and
-   packaging each language needs, and whether that knowledge lives in `builders/` or in the language directory (R614).
+languages interoperating in hbnf (not that we want to at this point, but it will be possible)".  Not a goal now.  The front end is one
+of these too (R722: "the ada reader will also become an hbnf grammar plus epilogue.. or minimal epilogue that links in with the current
+optimization etc code that is in ada").
+
+Details tbd for the builder: the form of the packaging command, what is packaged for each language, what wiring and packaging each
+language needs, and whether that knowledge lives in `builders/` or in the language directory (R614).
 
 Whether the output of the layout is a different IR format or the same one is *details tbd* (R714: "possibly a different ir format,
 possibly not").
