@@ -37,7 +37,8 @@ Status vocabulary (the author's rule): a decision stays a decision when its deta
    compiled to `.o` files that are linked in; several languages could therefore interoperate in hbnf, possible but not a goal now.  R721.
    The Ada reader will also become an hbnf grammar plus an epilogue, possibly a minimal one that links in the existing Ada analysis
    and optimisation code.  R722.  There can be several readers, one for each BNF variant hbnf supports: "ebnf, abnf, ybnf (the yacc dialect), hbnf etc".
-   R723, R724.
+   R723, R724.  Today these are dialects of the one Ada reader (`dialect` directive, `--dialect=bnf|ebnf|abnf|ybnf|hbnf`,
+   `hbnf_grammar.adb:16227`), so this moves the choice from a flag to one reader grammar per variant.
 9. **"Jets" is fine, "it is a term of art"** (R713): the removal of the word in R352 is withdrawn.
 
 Details tbd: what wiring and packaging each language needs and the form of the packaging command (R718, R719), whether the layout's output is a different IR format or the same one, how the `.o` files are built and linked, the exact list of operations, whether layouts nest under `languages/` (R614),
