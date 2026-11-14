@@ -18,7 +18,7 @@ into actual code".  Stage (a) is too (R722): the Ada reader becomes an hbnf gram
 optimisation code.  Nothing of this is built: the reader is Ada today (`hbnf_grammar.adb`).
 
 1. **Front end.**  The reader, the analyses (compilability, lookahead, contexts, facts) and the optimisations turn the grammar into
-   the IR: about forty typed operations (hbnf-ir, hbnf-ops; the list is *details tbd*, a first count is under "The operations" below).
+   the IR: about forty typed operations (working names hbnf-ir and hbnf-ops, see below; the list is *details tbd*, a first count is under "The operations" below).
 2. **Layout transformer** (R709).  The grammars under `layouts/` are **rewrite grammars over the IR**: each one decides the output form
    of the parser (tree, tape, tailq, rb and the like) by rewriting the IR into the shape that form needs.
 3. **Language transformer** (R710).  The grammars under `languages/` are **rewrite grammars**, one per target language.  ONE emitter
@@ -97,7 +97,7 @@ languages/rust/
 The Ada core stops writing any language.  It reads the grammar, runs the analyses it already runs, and produces **one language-neutral
 description of the parser**: the list of typed operations.  The layout grammar and then the language grammar turn that list into text.
 
-### The operations: hbnf-ir (what the four backends already agree on)
+### The operations (what the four backends already agree on)
 
 Earlier drafts of this file called them **hbnf-ir** and **hbnf-ops** (no register row quotes those names); the file that defines them would be **`irops.hbnf`**: the
 roughly forty operations needed to implement a parser from hbnf grammar rules.  The list is *details tbd*; the count below is the

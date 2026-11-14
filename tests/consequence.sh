@@ -102,7 +102,7 @@ run() {
 		"$CLI" "$g" --backend=$b 2>&1 > /dev/null | grep -q "rule \`$r\` has a consequence on a context, a fact or a rewrite" \
 			|| { echo "consequence: FAIL ($n: $b does not refuse it by rule name)"; fail=1; }
 	done
-	# (Ada generates a context now, and refuses facts, rewrites and `hidden` as the others do)
+	# (reached only for a grammar with `hidden` or `hiding`, which Rust, Zig and Ada refuse)
 	"$CLI" "$g" --backend=ada 2>&1 > /dev/null | grep -qE "can be emitted in C so far|rule \`$r\` has a consequence on a context, a fact or a rewrite|which only the C backend generates" \
 		|| { echo "consequence: FAIL ($n: ada does not refuse it)"; fail=1; }
 }

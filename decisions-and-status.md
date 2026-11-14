@@ -2518,9 +2518,9 @@
 - Doc differs: ABNF.md:112 says "Off by default" and "listed on stderr" (the decision says stdout and no annotation; annotation is not needed, so only the default and the stream differ)
 
 ### Grammar dialects
-- Status: DONE — c79 is the name everywhere; the dialect line exists; 2026-11-14 decided one reader per BNF variant, details tbd (latest decision 2026-11-14 \[R724\])
+- Status: DONE — c79 is the name everywhere; the dialect line exists (latest decision 2026-10-27 \[R446\])
 - Decided: 2026-10-27 decided: "call it c79 instead of c32v". \[R446\]
-- Decided: 2026-11-14 decided: there can be several readers, one for each BNF variant hbnf supports \[R723\], named "ebnf, abnf, ybnf, hbnf etc" \[R724\], ybnf being the yacc dialect (R279); today these are dialects of the one Ada reader, chosen by the `dialect` line or `--dialect=`; details tbd: the complete list, where the readers live, how one is chosen for a file (see Grammar for HBNF itself)
+- Decided: 2026-11-14 decided: there can be several readers, one for each BNF variant hbnf supports \[R723\], named "ebnf, abnf, ybnf, hbnf etc" \[R724\], ybnf being the yacc dialect (R279); today these are dialects of the one Ada reader, chosen by the `dialect` line or `--dialect=`; details tbd: the complete list, where the readers live, how one is chosen for a file; not built: tracked under Grammar for HBNF itself and Generator pipeline: operations, layouts, languages
 - Rationale: HBNF "can be Hyper BNF", "while retaning the earlier hartmeier brauer etc meaning" \[R280\]
 - Rationale: "the spaced form is bogus"; if --ebnf is passed, use the EBNF syntax "3 \* x" \[R278\]
 - Precedent: ISO EBNF (chosen; named by assistant, accepted): used only when --ebnf is passed \[R278\]

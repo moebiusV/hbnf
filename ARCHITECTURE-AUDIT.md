@@ -119,9 +119,9 @@ Code, not comments (not changed here):
 - `tests/lexer/look-ws.hbnf:4` includes an absolute path under a local home directory; `corpus/c/cpp-gnu.hbnf:418` has local build
   paths in its generated table (origin: `scripts/build-gcc.sh`).
 - Error and warning strings that still say "only the C backend generates" or "can be emitted in C so far":
-  `hbnf_compilable.adb` near lines 1393, 1397, 1461 and 1464, and `hbnf.adb` near lines 519 and 549; the operation list in the error near line 13220 of `hbnf_grammar.adb`
+  `hbnf_compilable.adb` near lines 1393, 1397, 1461 and 1464, and `hbnf.adb` near lines 365, 375, 519 and 549; the operation list in the error near line 13220 of `hbnf_grammar.adb`
   omits `key` and `generate`.
-- `tests/consequence.sh`: the comment on its `run()` function and the assertions that Zig and Ada refuse facts and rewrites look stale against the backends now generating them (its header was corrected).
+- `tests/consequence.sh`: the comment near line 105 is stale and the MODE `r` branch is used by no call (its header and the `run()` comment were corrected).
 - Four templates are referenced by no Ada source: `c_alt_atend`, `c_alt_reset`, `c_seq_kind`, `c_seq_literal`.
 - `Class_Kind` is declared five times (`hbnf_c.adb` twice, Rust, Zig, Ada) although `hbnf_shape.ads` is meant to hold what the
   emitters share.
