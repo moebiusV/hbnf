@@ -121,7 +121,7 @@ Code, not comments (not changed here):
 - Error and warning strings that still say "only the C backend generates" or "can be emitted in C so far":
   `hbnf_compilable.adb` near lines 1393, 1397, 1461 and 1464, and `hbnf.adb` near lines 365, 375, 519 and 549; the operation list in the error near line 13220 of `hbnf_grammar.adb`
   omits `key` and `generate`.
-- `tests/consequence.sh`: the comment near line 105 is stale and the MODE `r` branch is used by no call (its header and the `run()` comment were corrected).
+- `tests/consequence.sh`: the MODE `r` branch is used by no call (its header, the `run()` comment and the comment near line 105 were corrected).
 - Four templates are referenced by no Ada source: `c_alt_atend`, `c_alt_reset`, `c_seq_kind`, `c_seq_literal`.
 - `Class_Kind` is declared five times (`hbnf_c.adb` twice, Rust, Zig, Ada) although `hbnf_shape.ads` is meant to hold what the
   emitters share.
